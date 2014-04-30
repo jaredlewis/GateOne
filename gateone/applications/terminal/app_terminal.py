@@ -1134,6 +1134,10 @@ class TerminalApplication(GOApplication):
             }
             env.update(os.environ) # Add the defaults for this system
             env.update(environment_vars) # Apply policy-based environment
+
+            # Apply settings based environment variables
+            env.update(settings.get('environment', {}))
+
             if self.plugin_env_hooks:
                 # This allows plugins to add/override environment variables
                 env.update(self.plugin_env_hooks)
