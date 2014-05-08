@@ -13,7 +13,7 @@
     border: 0;
     left: 0;
     right: 2em;
-    font-family: 'Ubuntu Mono', monospace;
+    font-family: monospace;
 }
 .✈playPause {
     float: left;

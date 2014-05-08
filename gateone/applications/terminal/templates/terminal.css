@@ -58,7 +58,7 @@ span.✈termline {
     font-family: monospace;
 }
 .✈font_ubuntu {
-    font-family: 'Ubuntu Mono';
+    font-family: monospace;
 }
 @media only screen and (max-width: 800px) {
     .✈pastearea {

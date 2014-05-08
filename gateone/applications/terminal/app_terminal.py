@@ -554,65 +554,66 @@ class TerminalApplication(GOApplication):
             APPLICATION_PATH, 'templates')
         filename = 'font.css'
         font_css_path = os.path.join(templates_path, filename)
-        if font_family == 'monospace':
-            # User wants the browser to control the font; real simple:
-            rendered_path = self.render_style(
-                font_css_path,
-                force=True,
-                font_family=font_family,
-                font_size=font_size)
-            self.send_css(
-                rendered_path, element_id="terminal_font", filename=filename)
-            return
-        from .woff_info import woff_info
-        fonts_path = os.path.join(APPLICATION_PATH, 'static', 'fonts')
-        fonts = os.listdir(fonts_path)
-        woffs = {}
-        for font in fonts:
-            if not font.endswith('.woff'):
-                continue
-            font_path = os.path.join(fonts_path, font)
-            font_info = woff_info(font_path)
-            if "Font Family" not in font_info:
-                self.ws.logger.error(_(
-                    "Bad font in fonts dir (missing Font Family in name "
-                    "table): %s" % font))
-                continue # Bad font
-            if font_info["Font Family"] == font_family:
-                font_dict = {
-                    "subfamily": font_info["Font Subfamily"],
-                    "font_style": "normal", # Overwritten below (if warranted)
-                    "font_weight": "normal", # Ditto
-                    "locals": "",
-                    "url": (
-                        "{server_url}terminal/static/fonts/{font}".format(
-                            server_url=self.ws.base_url,
-                            font=font)
-                    )
-                }
-                if "Full Name" in font_info:
-                    font_dict["locals"] += (
-                        "local('{0}')".format(font_info["Full Name"]))
-                if "Postscript Name" in font_info:
-                    font_dict["locals"] += (
-                        ", local('{0}')".format(font_info["Postscript Name"]))
-                if 'italic' in font_info["Font Subfamily"].lower():
-                    font_dict["font_style"] = "italic"
-                if 'oblique' in font_info["Font Subfamily"].lower():
-                    font_dict["font_style"] = "oblique"
-                if 'bold' in font_info["Font Subfamily"].lower():
-                    font_dict["font_weight"] = "bold"
-                woffs.update({font: font_dict})
-        # NOTE: Not using render_and_send_css() because the source CSS file will
-        # never change but the output will.
+
+        # if font_family == 'monospace':
+        # User wants the browser to control the font; real simple:
         rendered_path = self.render_style(
             font_css_path,
             force=True,
-            woffs=woffs,
             font_family=font_family,
             font_size=font_size)
         self.send_css(
             rendered_path, element_id="terminal_font", filename=filename)
+        return
+        # from .woff_info import woff_info
+        # fonts_path = os.path.join(APPLICATION_PATH, 'static', 'fonts')
+        # fonts = os.listdir(fonts_path)
+        # woffs = {}
+        # for font in fonts:
+        #     if not font.endswith('.woff'):
+        #         continue
+        #     font_path = os.path.join(fonts_path, font)
+        #     font_info = woff_info(font_path)
+        #     if "Font Family" not in font_info:
+        #         self.ws.logger.error(_(
+        #             "Bad font in fonts dir (missing Font Family in name "
+        #             "table): %s" % font))
+        #         continue # Bad font
+        #     if font_info["Font Family"] == font_family:
+        #         font_dict = {
+        #             "subfamily": font_info["Font Subfamily"],
+        #             "font_style": "normal", # Overwritten below (if warranted)
+        #             "font_weight": "normal", # Ditto
+        #             "locals": "",
+        #             "url": (
+        #                 "{server_url}terminal/static/fonts/{font}".format(
+        #                     server_url=self.ws.base_url,
+        #                     font=font)
+        #             )
+        #         }
+        #         if "Full Name" in font_info:
+        #             font_dict["locals"] += (
+        #                 "local('{0}')".format(font_info["Full Name"]))
+        #         if "Postscript Name" in font_info:
+        #             font_dict["locals"] += (
+        #                 ", local('{0}')".format(font_info["Postscript Name"]))
+        #         if 'italic' in font_info["Font Subfamily"].lower():
+        #             font_dict["font_style"] = "italic"
+        #         if 'oblique' in font_info["Font Subfamily"].lower():
+        #             font_dict["font_style"] = "oblique"
+        #         if 'bold' in font_info["Font Subfamily"].lower():
+        #             font_dict["font_weight"] = "bold"
+        #         woffs.update({font: font_dict})
+        # # NOTE: Not using render_and_send_css() because the source CSS file will
+        # # never change but the output will.
+        # rendered_path = self.render_style(
+        #     font_css_path,
+        #     force=True,
+        #     woffs=woffs,
+        #     font_family=font_family,
+        #     font_size=font_size)
+        # self.send_css(
+        #     rendered_path, element_id="terminal_font", filename=filename)
 
     def enumerate_colors(self):
         """
