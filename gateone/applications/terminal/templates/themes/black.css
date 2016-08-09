@@ -16,7 +16,6 @@
     -ms-transition-timing-function: ease-in-out;
     transition-property: -webkit-transform, height, width;
     transition-duration: 1s;
-    transition-duration: 1s;
     transition-timing-function: ease-in-out;
 }
 .✈inactive span.✈cursor {
