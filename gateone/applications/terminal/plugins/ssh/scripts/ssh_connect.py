@@ -312,7 +312,7 @@ def openssh_connect(
         # running one-Gate One-per-server...
         "-oNoHostAuthenticationForLocalhost=yes",
         # This ensure's that the executing user's identity won't be used:
-        "-oIdentityFile='/dev/null'",
+        "-oIdentitiesOnly=yes",
         # This ensures the other end can tell we're a Gate One terminal and
         # possibly use the session ID with plugins (could be interesting).
         "-oSendEnv='GO_TERM GO_LOCATION GO_SESSION'",
@@ -467,8 +467,13 @@ def openssh_connect(
     os.chmod(script_path, 0o700) # 0700 for good security practices
     # Execute then immediately quit so we don't use up any more memory than we
     # need.
-    os.execvpe('/bin/sh', [
-        '-c', script_path, '&&', 'rm', '-f', script_path], env)
+    # setup default execvpe args
+    args = ['-c', script_path, '&&', 'rm', '-f', script_path]
+    # if we detect /bin/sh linked to busybox then make sure we insert the 'sh'
+    # at the beginning of the args list
+    if os.path.islink('/bin/sh'):
+        args.insert(0, 'sh')
+    os.execvpe('/bin/sh', args, env)
     os._exit(0)
 
 def telnet_connect(user, host, port=23, env=None):
@@ -839,8 +844,11 @@ def main():
                         url = None
                         raw_input(invalid_hostname_err)
                 else:
-                    url = None
-                    raw_input(invalid_hostname_err)
+                    if valid_ip(host):
+                        validated = True
+                    else:
+                        url = None
+                        raw_input(invalid_hostname_err)
         validated = False
         if options.auth_only:
             port = options.default_port

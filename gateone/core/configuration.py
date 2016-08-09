@@ -14,7 +14,7 @@ This module contains functions that deal with Gate One's options/settings
 """
 
 import os, sys, io, re, socket, tempfile, logging
-from gateone import GATEONE_DIR
+from pkg_resources import resource_filename, resource_listdir, resource_string
 from .log import FACILITIES
 from gateone.core.log import go_logger
 from tornado import locale
@@ -28,6 +28,12 @@ _ = temp_locale.translate
 del temp_locale
 
 logger = go_logger(None)
+comments_re = re.compile(
+    r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+    re.DOTALL | re.MULTILINE
+)
+trailing_commas_re = re.compile(
+    r'(,)\s*}(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)')
 
 class SettingsError(Exception):
     """
@@ -125,8 +131,79 @@ def mkdir_p(path):
 
 # Settings and options-related functions
 # NOTE:  "options" refer to command line arguments (for the most part) while
-# "settings" refers to the .conf files.
-def define_options(installed=True):
+# "settings" refers to the .conf files.  "commands" are CLI commmands specified
+# via apps and plugins (for the most part).  e.g. termlog, install_license, etc
+def print_help(commands):
+    """
+    Tornado's options.print_help() function with a few minor changes:
+
+        * Help text is not hard wrapped (why did the Tornado devs do that? Ugh).
+        * It includes information about Gate One 'commands'.
+        * It only prints to stdout.
+    """
+    import textwrap, fcntl, termios, struct
+    renditions = False
+    try:
+        import curses
+        if hasattr(sys.stderr, 'isatty') and sys.stderr.isatty():
+            try:
+                curses.setupterm()
+                if curses.tigetnum("colors") > 0:
+                    renditions = True
+            except Exception:
+                renditions = False
+    except ImportError:
+        pass
+    def bold(text):
+        if renditions:
+            return "\x1b[1m%s\x1b[0m" % text
+        return text
+    print("Usage: %s [OPTIONS]" % sys.argv[0])
+    print(bold("\nOptions:\n"))
+    rows, columns, hp, wp = struct.unpack('HHHH', fcntl.ioctl(
+        0, termios.TIOCGWINSZ, struct.pack('HHHH', 0, 0, 0, 0)))
+    by_group = {}
+    for option in options._options.values():
+        by_group.setdefault(option.group_name, []).append(option)
+    for filename, o in sorted(by_group.items()):
+        if filename:
+            print(bold("\n%s options:\n" % os.path.normpath(filename)))
+        o.sort(key=lambda option: option.name)
+        for option in o:
+            prefix = option.name
+            if option.metavar:
+                prefix += "=" + option.metavar
+            description = option.help or ""
+            if option.default is not None and option.default != '':
+                description += " (default %s)" % option.default
+            lines = textwrap.wrap(description, columns - 35)
+            if len(prefix) > 30 or len(lines) == 0:
+                lines.insert(0, '')
+            print("  --%-30s %s" % (prefix, lines[0]))
+            for line in lines[1:]:
+                print("%-34s %s" % (' ', line))
+    print(bold("\nCommands:\n"))
+    print("  Usage: %s <command> [OPTIONS]\n" % sys.argv[0])
+    commands_description = _(
+        "GateOne supports many different CLI 'commands' which can be used "
+        "to invoke special functionality provided by plugins and applications "
+        "(and application's plugins).  Each command can have it's own options "
+        "and most will have a --help function of their own.")
+    lines = textwrap.wrap(commands_description, columns)
+    for line in lines:
+        print("%s %s" % (' ', line))
+    print("")
+    for module, command_dict in commands.items():
+        print(bold("Commands provided by '%s':\n" % module))
+        for command, details in sorted(command_dict.items()):
+            print("  %-32s %s" % (command, details['description']))
+        print("")
+    print(bold("Example command usage:\n"))
+    print("  %s termlog --help" % sys.argv[0])
+    print("") # The oh-so-important whitespace before the prompt
+    sys.exit(1)
+
+def define_options(installed=True, cli_commands=None):
     """
     Calls `tornado.options.define` for all of Gate One's command-line options.
 
@@ -146,7 +223,7 @@ def define_options(installed=True):
     user_locale = locale.get(default_locale)
     # NOTE: The locale setting above is only for the --help messages.
     # Simplify the auth option help message
-    auths = "none, api, google, ssl"
+    auths = "none, api, cas, google, ssl"
     from gateone.auth.authentication import PAMAuthHandler, KerberosAuthHandler
     if KerberosAuthHandler:
         auths += ", kerberos"
@@ -208,6 +285,11 @@ def define_options(installed=True):
         cache_dir_default = os.path.join(settings_base, 'cache')
     options.log_file_prefix = log_default
     ssl_dir = os.path.join(settings_base, 'ssl')
+    # Override Tornado's help so we can print CLI 'commands'
+    del options._options['help']
+    define("help",
+        type=bool,
+        help="Show this help information")
     define("version",
         type=bool,
         group='gateone',
@@ -278,20 +360,27 @@ def define_options(installed=True):
         group='gateone',
         help=_("Path to the Unix socket (if --enable_unix_socket=True)."),
         type=basestring)
+    define(
+        "unix_socket_mode",
+        default="0600",
+        group='gateone',
+        help=_("Unix socket mode (if --enable_unix_socket=True)."),
+        type=basestring)
     # Please only use this if Gate One is running behind something with SSL:
     define(
         "disable_ssl",
         default=False,
         group='gateone',
-        help=_("If enabled, Gate One will run without SSL (generally not a "
+        help=_("If enabled Gate One will run without SSL (generally not a "
                "good idea).")
     )
     define(
         "certificate",
         default=os.path.join(ssl_dir, "certificate.pem"),
         group='gateone',
-        help=_("Path to the SSL certificate.  Will be auto-generated if none is"
-               " provided."),
+        help=_(
+            "Path to the SSL certificate.  Will be auto-generated if not "
+            "found."),
         type=basestring
     )
     define(
@@ -334,8 +423,9 @@ def define_options(installed=True):
         "user_logs_max_age",
         default="30d",
         group='gateone',
-        help=_("Maximum amount of length of time to keep any given user log "
-                "before it is removed."),
+        help=_(
+            "Maximum length of time to keep any given user log before it is "
+            "automatically removed."),
         type=basestring
     )
     define(
@@ -388,7 +478,7 @@ def define_options(installed=True):
         default="30s", # 30 seconds
         group='gateone',
         help=_(
-            "How long before an API authentication object becomes invalid.  "),
+            "How long before an API authentication object becomes invalid."),
         type=basestring
     )
     define(
@@ -396,14 +486,14 @@ def define_options(installed=True):
         default=None,
         group='gateone',
         help=_("Kerberos REALM (aka DOMAIN) to use when authenticating clients."
-               " Only relevant if Kerberos authentication is enabled."),
+               "  Only relevant if Kerberos authentication is enabled."),
         type=basestring
     )
     define(
         "sso_service",
         default='HTTP',
         group='gateone',
-        help=_("Kerberos service (aka application) to use. Defaults to HTTP. "
+        help=_("Kerberos service (aka application) to use.  "
                "Only relevant if Kerberos authentication is enabled."),
         type=basestring
     )
@@ -415,7 +505,7 @@ def define_options(installed=True):
         "Default: hostname.  "
         "Only relevant if PAM authentication is enabled."),
         # NOTE: This is only used to show the user a REALM at the basic auth
-        #       prompt and as the name in the GATEONE_DIR+'/users' directory
+        #       prompt and as the name in the 'user_dir/<user>' directory
         type=basestring
     )
     define(
@@ -431,7 +521,9 @@ def define_options(installed=True):
         default=False,
         group='gateone',
         help=_(
-            "When embedding Gate One, this option is available to templates.")
+            "When embedding Gate One this option is available to plugins, "
+            "applications, and templates so they know they're running in "
+            "embedded mode and can change behavior (if necessary).")
     )
     define(
         "locale",
@@ -439,7 +531,7 @@ def define_options(installed=True):
         group='gateone',
         help=_("The locale (e.g. pt_PT) Gate One should use for translations."
              "  If not provided, will default to $LANG (which is '%s' in your "
-             "current shell), or en_US if not set."
+             "current shell)."
              % os.environ.get('LANG', 'not set').split('.')[0]),
         type=basestring
     )
@@ -448,15 +540,15 @@ def define_options(installed=True):
         group='gateone',
         help=_("A JavaScript object (string) that will be used when running "
                "GateOne.init() inside index.html.  "
-               "Example: --js_init=\"{scheme: 'white'}\" would result in "
-               "GateOne.init({scheme: 'white'})"),
+               "Example: --js_init=\"{theme: 'white'}\" would result in "
+               "GateOne.init({theme: 'white'})"),
         type=basestring
     )
     define(
         "https_redirect",
         default=False,
         group='gateone',
-        help=_("If enabled, a separate listener will be started on port 80 that"
+        help=_("If enabled a separate listener will be started on port 80 that"
                " redirects users to the configured port using HTTPS.")
     )
     define(
@@ -474,36 +566,34 @@ def define_options(installed=True):
         default=default_origins,
         group='gateone',
         help=_("A semicolon-separated list of origins you wish to allow access "
-               "to your Gate One server over the WebSocket.  This value must "
-               "contain the hostnames and FQDNs (e.g. foo;foo.bar;) users will"
-               " use to connect to your Gate One server as well as the "
-               "hostnames/FQDNs of any sites that will be embedding Gate One. "
+               "to your Gate One server over the WebSocket.  This value may "
+               "contain hostnames/FQDNs (e.g. foo;foo.bar;) and IP addresses.  "
+               "This value must contain all the hostnames/IPs that users will "
+               "use to connect to Gate One.  "
                "Alternatively, '*' may be  specified to allow access from "
-               "anywhere."),
+               "anywhere.  NOTE: Using a '*' is only a good idea if you've "
+               "configured Gate One to use API authentication."),
         type=basestring
     )
     define(
         "pid_file",
         default=pid_default,
         group='gateone',
-        help=_(
-            "Define the path to the pid file.  Default: /var/run/gateone.pid"),
+        help=_("Define the path to the pid file."),
         type=basestring
     )
     define(
         "uid",
         default=str(os.getuid()),
         group='gateone',
-        help=_(
-            "Drop privileges and run Gate One as this user/uid."),
+        help=_("Drop privileges and run Gate One as this user/uid."),
         type=basestring
     )
     define(
         "gid",
         default=str(os.getgid()),
         group='gateone',
-        help=_(
-            "Drop privileges and run Gate One as this group/gid."),
+        help=_("Drop privileges and run Gate One as this group/gid."),
         type=basestring
     )
     define(
@@ -520,7 +610,7 @@ def define_options(installed=True):
         group='gateone',
         help=_(
             "Combines all of Gate One's JavaScript files into one big file and "
-            "saves it at the given path (e.g. ./gateone.py "
+            "saves it to the given path (e.g. ./gateone.py "
             "--combine_js=/tmp/gateone.js)"),
         type=basestring
     )
@@ -530,7 +620,7 @@ def define_options(installed=True):
         group='gateone',
         help=_(
             "Combines all of Gate One's CSS Template files into one big file "
-            "and saves it at the given path (e.g. ./gateone.py "
+            "and saves it to the given path (e.g. ./gateone.py "
             "--combine_css=/tmp/gateone.css)."),
         type=basestring
     )
@@ -542,6 +632,24 @@ def define_options(installed=True):
             "Use this setting in conjunction with --combine_css if the <div> "
             "where Gate One lives is named something other than #gateone"),
         type=basestring
+    )
+    define(
+        "multiprocessing_workers",
+        default=None,
+        group='gateone',
+        help=_(
+            "The number of processes to spawn use when using multiprocessing. "
+            "Default is: <number of cores> + 1.  Set to 0 to disable "
+            "multiprocessing."),
+        type=int
+    )
+    define(
+        "configure",
+        default=False,
+        group='gateone',
+        help=_(
+            "Only configure Gate One (create SSL certs, conf.d, etc).  Do not "
+            "start any Gate One processes."),
     )
 
 def settings_template(path, **kwargs):
@@ -583,7 +691,7 @@ def parse_commands(commands):
     out = OrderedDict()
     command = OrderedDict()
     for item in commands:
-        if item.startswith('-'):
+        if item.startswith('-') or ' ' in item:
             out[command].append(item)
         else:
             command = item
@@ -600,7 +708,7 @@ def generate_server_conf(installed=True):
     directory.
     """
     logger.info(_(
-        u"Gate One settings are incomplete.  A new settings/10server.conf"
+        u"Gate One settings are incomplete.  A new <settings_dir>/10server.conf"
         u" will be generated."))
     auth_settings = {} # Auth stuff goes in 20authentication.conf
     all_setttings = options_to_settings(options) # NOTE: options is global
@@ -616,7 +724,8 @@ def generate_server_conf(installed=True):
     del config_defaults['settings_dir']
     non_options = [
         # These are things that don't really belong in settings
-        'new_api_key', 'help', 'kill', 'config'
+        'new_api_key', 'help', 'kill', 'config', 'version', 'combine_css',
+        'combine_js', 'combine_css_container', 'configure'
     ]
     # Don't need non-options in there either:
     for non_option in non_options:
@@ -663,8 +772,8 @@ def generate_server_conf(installed=True):
             config_defaults['log_file_prefix'],
             mode='w', encoding='utf-8').write(u'')
     auth_conf_path = os.path.join(settings_path, '20authentication.conf')
-    template_path = os.path.join(
-        GATEONE_DIR, 'templates', 'settings', '10server.conf')
+    template_path = resource_filename(
+        'gateone', '/templates/settings/generic.conf')
     new_settings = settings_template(
         template_path, settings=config_defaults)
     with io.open(server_conf_path, mode='w') as s:
@@ -762,8 +871,8 @@ def convert_old_server_conf():
                     conf.write(unicode(api_keys))
             else:
                 settings.update({key: value})
-        template_path = os.path.join(
-            GATEONE_DIR, 'templates', 'settings', '10server.conf')
+        template_path = resource_filename(
+            'gateone', '/templates/settings/generic.conf')
         new_settings = settings_template(template_path, settings=settings)
         if not os.path.exists(server_conf_path):
             with io.open(server_conf_path, 'w') as s:
@@ -778,8 +887,8 @@ def convert_old_server_conf():
                 s.write(new_auth_settings)
         # Terminal uses a slightly different template; it converts 'command'
         # to the new 'commands' format.
-        template_path = os.path.join(
-            GATEONE_DIR, 'templates', 'settings', '50terminal.conf')
+        template_path = resource_filename(
+            'gateone', '/templates/settings/50terminal.conf')
         new_term_settings = settings_template(
             template_path, settings=terminal_settings)
         if not os.path.exists(terminal_conf_path):
@@ -800,7 +909,7 @@ def apply_cli_overrides(go_settings):
     non_options = [
         # These are things that don't really belong in settings
         'new_api_key', 'help', 'kill', 'config', 'combine_js', 'combine_css',
-        'combine_css_container'
+        'combine_css_container', 'version', 'configure'
     ]
     for arg in list(sys.argv)[1:]:
         if not arg.startswith('-'):
@@ -831,24 +940,21 @@ def apply_cli_overrides(go_settings):
                 else:
                     setattr(options, key, str(value))
 
-# The following was taken from:
-# http://stackoverflow.com/questions/241327/python-snippet-to-remove-c-and-c-comments
-# Thank you Markus Jarderot!
-def remove_comments(text):
+def remove_comments(json_like):
     """
-    Removes C-style comments from *text* and returns the result.
+    Removes C-style comments from *json_like* and returns the result.
     """
     def replacer(match):
         s = match.group(0)
-        if s.startswith('/'):
-            return ""
-        else:
-            return s
-    pattern = re.compile(
-        r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
-        re.DOTALL | re.MULTILINE
-    )
-    return re.sub(pattern, replacer, text)
+        if s[0] == '/': return ""
+        return s
+    return comments_re.sub(replacer, json_like)
+
+def remove_trailing_commas(json_like):
+    """
+    Removes trailing commas from *json_like* and returns the result.
+    """
+    return trailing_commas_re.sub("}", json_like)
 
 def get_settings(path, add_default=True):
     """
@@ -880,7 +986,8 @@ def get_settings(path, add_default=True):
             filepath = path
         with io.open(filepath, encoding='utf-8') as f:
             # Remove comments
-            proper_json = remove_comments(f.read())
+            almost_json = remove_comments(f.read())
+            proper_json = remove_trailing_commas(almost_json)
             # Remove blank/empty lines
             proper_json = os.linesep.join([
                 s for s in proper_json.splitlines() if s.strip()])
@@ -895,8 +1002,8 @@ def get_settings(path, add_default=True):
                 # Let's try to be as user-friendly as possible by pointing out
                 # *precisely* where the error occurred (if possible)...
                 try:
-                    line_no = int(e.message.split(': line ', 1)[1].split()[0])
-                    column = int(e.message.split(': line ', 1)[1].split()[2])
+                    line_no = int(str(e).split(': line ', 1)[1].split()[0])
+                    column = int(str(e).split(': line ', 1)[1].split()[2])
                     for i, line in enumerate(proper_json.splitlines()):
                         if i == line_no-1:
                             print(
@@ -932,7 +1039,7 @@ def options_to_settings(options):
     ]
     non_options = [
         # These are things that don't really belong in settings
-        'new_api_key', 'help', 'kill', 'config'
+        'new_api_key', 'help', 'kill', 'config', 'version', 'configure'
     ]
     for key, value in options.items():
         if key in terminal_options:
@@ -978,8 +1085,12 @@ def combine_javascript(path, settings_dir=None):
     applications and plugins should be included in the dump based on what is
     enabled.
     """
+    # A couple partials to save some space/typing
+    resource = lambda s: resource_string('gateone', s).decode('utf-8')
+    resource_fn = lambda s: resource_filename('gateone', s)
+    resource_dir = lambda s: resource_listdir('gateone', s)
     if not settings_dir:
-        settings_dir = os.path.join(GATEONE_DIR, 'settings')
+        settings_dir = resource_filename('gateone', '/settings')
     all_settings = get_settings(settings_dir)
     enabled_plugins = []
     enabled_applications = []
@@ -989,55 +1100,72 @@ def combine_javascript(path, settings_dir=None):
             'enabled_plugins', [])
         enabled_applications = all_settings['*']['gateone'].get(
             'enabled_applications', [])
-    plugins_dir = os.path.join(GATEONE_DIR, 'plugins')
-    pluginslist = os.listdir(plugins_dir)
+    plugins_dir = resource_fn('/plugins')
+    pluginslist = resource_dir('/plugins')
     pluginslist.sort()
-    applications_dir = os.path.join(GATEONE_DIR, 'applications')
-    appslist = os.listdir(applications_dir)
+    applications_dir = resource_fn('/applications')
+    appslist = resource_dir('/applications')
     appslist.sort()
+    logger.info(_("Combining all Gate One JavaScript into a single file..."))
     with io.open(path, 'w') as f:
-        # Start by adding gateone.js
-        gateone_js = os.path.join(GATEONE_DIR, 'static', 'gateone.js')
-        with io.open(gateone_js) as go_js:
-            f.write(go_js.read() + '\n')
+        # Start by adding Gate One's static JS files
+        go_static_files = [
+            a for a in resource_dir('/static') if a.endswith('.js')]
+        # gateone.js must always come first
+        go_first = [a for a in go_static_files if a.startswith('gateone')]
+        go_first.sort()
+        index = go_first.index('gateone.js')
+        if index: # Nonzero index means it's not first
+            go_first.insert(0, go_first.pop(index)) # Move it to the front
+        if 'gateone.min.js' in go_first: # Don't want two copies of gateone.js
+            go_first.remove('gateone.min.js')
+        go_last = [a for a in go_static_files if not a.startswith('gateone')]
+        go_static_files = go_first + go_last
+        for filename in go_static_files:
+            filepath = '/static/%s' % filename
+            logger.info(_("Concatenating: %s") % filepath)
+            f.write(resource(filepath) + u'\n')
         # Gate One plugins
         for plugin in pluginslist:
             if enabled_plugins and plugin not in enabled_plugins:
                 continue
-            static_dir = os.path.join(plugins_dir, plugin, 'static')
+            plugin_static_path = '/plugins/%s/static' % plugin
+            # NOTE: Using resource_filename() here so that it gets unpacked if
+            # necessary:
+            static_dir = resource_fn(plugin_static_path)
             if os.path.isdir(static_dir):
-                filelist = os.listdir(static_dir)
+                filelist = resource_dir(plugin_static_path)
                 filelist.sort()
                 for filename in filelist:
-                    filepath = os.path.join(static_dir, filename)
+                    filepath = os.path.join(plugin_static_path, filename)
                     if filename.endswith('.js'):
-                        with io.open(filepath) as js_file:
-                            f.write(js_file.read() + u'\n')
+                        logger.info(_("Concatenating: %s") % filepath)
+                        f.write(resource(filepath) + u'\n')
         # Gate One applications
         for application in appslist:
             if enabled_applications:
                 # Only export JS of enabled apps
                 if application not in enabled_applications:
                     continue
-            static_dir = os.path.join(GATEONE_DIR,
-                'applications', application, 'static')
-            plugins_dir = os.path.join(
-                applications_dir, application, 'plugins')
+            app_static_path = '/applications/%s/static' % application
+            static_dir = resource_fn(app_static_path)
             if os.path.isdir(static_dir):
-                filelist = os.listdir(static_dir)
+                filelist = resource_dir(app_static_path)
                 filelist.sort()
                 for filename in filelist:
-                    filepath = os.path.join(static_dir, filename)
+                    filepath = os.path.join(app_static_path, filename)
                     if filename.endswith('.js'):
-                        with io.open(filepath) as js_file:
-                            f.write(js_file.read() + u'\n')
+                        logger.info(_("Concatenating: %s") % filepath)
+                        f.write(resource(filepath) + u'\n')
             app_settings = all_settings['*'].get(application, None)
             enabled_app_plugins = []
             if app_settings:
-                enabled_app_plugins = app_settings.get(
-                    'enabled_plugins', [])
+                enabled_app_plugins = app_settings.get('enabled_plugins', [])
+            app_plugins = '/applications/%s/plugins' % application
+            plugins_dir = resource_filename('gateone', app_plugins)
             if os.path.isdir(plugins_dir):
-                pluginslist = os.listdir(plugins_dir)
+                pluginslist = resource_dir(app_plugins)
+                plugin_static_path = app_plugins + '/{plugin}/static'
                 pluginslist.sort()
                 # Gate One application plugins
                 for plugin in pluginslist:
@@ -1045,18 +1173,23 @@ def combine_javascript(path, settings_dir=None):
                     if enabled_app_plugins:
                         if plugin not in enabled_app_plugins:
                             continue
-                    static_dir = os.path.join(plugins_dir, plugin, 'static')
+                    static_path = plugin_static_path.format(plugin=plugin)
+                    static_dir = resource_fn(static_path)
                     if os.path.isdir(static_dir):
-                        filelist = os.listdir(static_dir)
+                        filelist = resource_dir(static_path)
                         filelist.sort()
                         for filename in filelist:
-                            filepath = os.path.join(static_dir, filename)
+                            filepath = os.path.join(static_path, filename)
                             if filename.endswith('.js'):
-                                with io.open(filepath) as js_file:
-                                    f.write(js_file.read() + u'\n')
+                                logger.info(_("Concatenating: %s") % filepath)
+                                f.write(resource(filepath) + u'\n')
         f.flush()
+    logger.info(_("JavaScript concatenation completed: %s") % path)
+    logger.info(_(
+        "Don't forget to set '\"send_js\": false' in your 10server.conf to "
+        "disable sending of JavaScript"))
 
-def combine_css(path, container, settings_dir=None, log=True):
+def combine_css(path, container, settings_dir=None):
     """
     Combines all application and plugin .css template files into one big one;
     saved to the given *path*.  Templates will be rendered using the given
@@ -1064,15 +1197,15 @@ def combine_css(path, container, settings_dir=None, log=True):
 
     If given, *settings_dir* will be used to determine which applications and
     plugins should be included in the dump based on what is enabled.
-
-    If *log* is ``False`` messages indicating where the files
-    have been saved will not be logged (useful when rendering CSS for
-    programatic use).
     """
+    # A couple partials to save some space/typing
+    resource = lambda s: resource_string('gateone', s).decode('utf-8')
+    resource_fn = lambda s: resource_filename('gateone', s)
+    resource_dir = lambda s: resource_listdir('gateone', s)
     if container.startswith('#'): # This is just in case (don't want ##gateone)
         container = container.lstrip('#')
     if not settings_dir:
-        settings_dir = os.path.join(GATEONE_DIR, 'settings')
+        settings_dir = resource_filename('gateone', '/settings')
     all_settings = get_settings(settings_dir)
     enabled_plugins = []
     enabled_applications = []
@@ -1086,119 +1219,135 @@ def combine_css(path, container, settings_dir=None, log=True):
             'enabled_applications', [])
         embedded = all_settings['*']['gateone'].get('embedded', False)
         url_prefix = all_settings['*']['gateone'].get('url_prefix', False)
-    plugins_dir = os.path.join(GATEONE_DIR, 'plugins')
-    pluginslist = os.listdir(plugins_dir)
+    plugins_dir = resource_fn('/plugins')
+    pluginslist = resource_dir('/plugins')
     pluginslist.sort()
-    applications_dir = os.path.join(GATEONE_DIR, 'applications')
-    appslist = os.listdir(applications_dir)
+    applications_dir = resource_fn('/applications')
+    appslist = resource_dir('/applications')
     appslist.sort()
-    global_themes_dir = os.path.join(GATEONE_DIR, 'templates', 'themes')
-    themes = os.listdir(global_themes_dir)
+    logger.info(_("Combining all Gate One CSS into a single file..."))
+    global_themes_dir = resource_fn('/templates/themes')
+    themes = resource_dir('/templates/themes')
     theme_writers = {}
     for theme in themes:
         combined_theme_path = "%s_theme_%s" % (
             path.split('.css')[0], theme)
         theme_writers[theme] = io.open(combined_theme_path, 'w')
-        themepath = os.path.join(global_themes_dir, theme)
-        with io.open(themepath) as css_file:
-            theme_writers[theme].write(css_file.read())
+        theme_relpath = '/templates/themes/' + theme
+        themepath = resource_fn(theme_relpath)
+        logger.info(_("Concatenating: %s") % theme_relpath)
+        theme_writers[theme].write(
+            u"\n/* ------ theme_relpath: %s ------ */\n" % theme_relpath)
+        theme_writers[theme].write(resource(theme_relpath))
     # NOTE: We skip gateone.css because that isn't used when embedding
     with io.open(path, 'w') as f:
         # Gate One plugins
-        # TODO: Add plugin theme files to this
         for plugin in pluginslist:
             if enabled_plugins and plugin not in enabled_plugins:
                 continue
-            css_dir = os.path.join(plugins_dir, plugin, 'templates')
+            plugin_theme_path = '/plugins/%s/templates/themes' % plugin
+            plugin_css_path = '/plugins/%s/templates' % plugin
+            # NOTE: Using resource_filename() here so that it gets unpacked if
+            # necessary:
+            theme_dir = resource_fn(plugin_theme_path)
+            if os.path.isdir(theme_dir):
+                filelist = resource_dir(plugin_theme_path)
+                filelist.sort()
+                for filename in filelist:
+                    filepath = os.path.join(plugin_theme_path, filename)
+                    if filename.endswith('.css'):
+                        logger.info(_("Concatenating: %s") % filepath)
+                        theme = os.path.split(filename)[1]
+                        theme_writers[theme].write(
+                            u"\n/* ------ filepath: %s ------ */\n" % filepath)
+                        theme_writers[theme].write(resource(filepath) + u'\n')
+            css_dir = resource_fn(plugin_css_path)
             if os.path.isdir(css_dir):
-                filelist = os.listdir(css_dir)
+                filelist = resource_dir(css_dir)
                 filelist.sort()
                 for filename in filelist:
                     filepath = os.path.join(css_dir, filename)
                     if filename.endswith('.css'):
-                        with io.open(filepath) as css_file:
-                            f.write(css_file.read() + u'\n')
+                        logger.info(_("Concatenating: %s") % filepath)
+                        f.write(
+                            u"\n/* ------ filepath: %s ------ */\n" % filepath)
+                        f.write(resource(filepath) + u'\n')
         # Gate One applications
         for application in appslist:
             if enabled_applications:
-                # Only export CSS of enabled apps
+                # Only export JS of enabled apps
                 if application not in enabled_applications:
                     continue
-            css_dir = os.path.join(GATEONE_DIR,
-                'applications', application, 'templates')
-            subdirs = []
-            plugins_dir = os.path.join(
-                applications_dir, application, 'plugins')
-            if os.path.isdir(css_dir):
-                filelist = os.listdir(css_dir)
+            app_templates_path = '/applications/%s/templates' % application
+            app_templates_dir = resource_fn(app_templates_path)
+            if os.path.isdir(app_templates_dir):
+                filelist = resource_dir(app_templates_path)
                 filelist.sort()
                 for filename in filelist:
-                    filepath = os.path.join(css_dir, filename)
+                    filepath = os.path.join(app_templates_path, filename)
                     if filename.endswith('.css'):
-                        with io.open(filepath) as css_file:
-                            f.write(css_file.read() + u'\n')
-                    elif os.path.isdir(filepath):
-                        subdirs.append(filepath)
-            while subdirs:
-                subdir = subdirs.pop()
-                filelist = os.listdir(subdir)
+                        logger.info(_("Concatenating: %s") % filepath)
+                        f.write(
+                            u"\n/* ------ filepath: %s ------ */\n" % filepath)
+                        f.write(resource(filepath) + u'\n')
+            app_themes_path = '/applications/%s/templates/themes' % application
+            app_themes_dir = resource_fn(app_themes_path)
+            if os.path.isdir(app_themes_dir):
+                filelist = resource_dir(app_themes_path)
                 filelist.sort()
                 for filename in filelist:
-                    filepath = os.path.join(subdir, filename)
+                    filepath = os.path.join(app_themes_path, filename)
                     if filename.endswith('.css'):
-                        with io.open(filepath) as css_file:
-                            combined = css_file.read() + u'\n'
-                            if os.path.split(subdir)[1] == 'themes':
-                                theme_writers[filename].write(combined)
-                            else:
-                                f.write(combined)
-                    elif os.path.isdir(filepath):
-                        subdirs.append(filepath)
+                        logger.info(_("Concatenating: %s") % filepath)
+                        theme = os.path.split(filename)[1]
+                        theme_writers[theme].write(
+                            u"\n/* ------ filepath: %s ------ */\n" % filepath)
+                        theme_writers[theme].write(resource(filepath) + u'\n')
             app_settings = all_settings['*'].get(application, None)
             enabled_app_plugins = []
             if app_settings:
-                enabled_app_plugins = app_settings.get(
-                    'enabled_plugins', [])
+                enabled_app_plugins = app_settings.get('enabled_plugins', [])
+            app_plugins = '/applications/%s/plugins' % application
+            plugins_dir = resource_filename('gateone', app_plugins)
             if os.path.isdir(plugins_dir):
-                pluginslist = os.listdir(plugins_dir)
-                pluginslist.sort()
                 # Gate One application plugins
+                pluginslist = resource_dir(app_plugins)
+                pluginslist.sort()
+                plugin_templates_path = app_plugins + '/{plugin}/templates'
+                plugin_themes_path = app_plugins + '/{plugin}/templates/themes'
                 for plugin in pluginslist:
-                    # Only export JS of enabled app plugins
+                    # Only export CSS of enabled app plugins
                     if enabled_app_plugins:
                         if plugin not in enabled_app_plugins:
                             continue
-                    css_dir = os.path.join(
-                        plugins_dir, plugin, 'templates')
-                    if os.path.isdir(css_dir):
-                        filelist = os.listdir(css_dir)
+                    templates_path = plugin_templates_path.format(plugin=plugin)
+                    templates_dir = resource_fn(templates_path)
+                    if os.path.isdir(templates_dir):
+                        filelist = resource_dir(templates_path)
                         filelist.sort()
                         for filename in filelist:
-                            filepath = os.path.join(css_dir, filename)
+                            filepath = os.path.join(templates_path, filename)
                             if filename.endswith('.css'):
-                                with io.open(filepath) as css_file:
-                                    f.write(css_file.read() + u'\n')
-                            elif os.path.isdir(os.path.join(
-                                css_dir, filename)):
-                                subdirs.append(filepath)
-                    while subdirs:
-                        subdir = subdirs.pop()
-                        filelist = os.listdir(subdir)
+                                logger.info(_("Concatenating: %s") % filepath)
+                                f.write(
+                                    u"\n/* ------ filepath: %s ------ */\n"
+                                    % filepath)
+                                f.write(resource(filepath) + u'\n')
+                    themes_path = plugin_themes_path.format(plugin=plugin)
+                    themes_dir = resource_fn(themes_path)
+                    if os.path.isdir(themes_dir):
+                        filelist = resource_dir(themes_path)
                         filelist.sort()
                         for filename in filelist:
-                            filepath = os.path.join(subdir, filename)
+                            filepath = os.path.join(themes_path, filename)
                             if filename.endswith('.css'):
-                                with io.open(filepath) as css_file:
-                                    with io.open(filepath) as css_file:
-                                        combined = css_file.read() + u'\n'
-                                        _dir = os.path.split(subdir)[1]
-                                        if _dir == 'themes':
-                                            theme_writers[filename].write(
-                                                combined)
-                                        else:
-                                            f.write(combined)
-                            elif os.path.isdir(filepath):
-                                subdirs.append(filepath)
+                                logger.info(_("Concatenating: %s") % filepath)
+                                theme = os.path.split(filename)[1]
+                                theme_writers[theme].write(
+                                    u"\n/* ------ filepath: %s ------ */\n"
+                                    % filepath)
+                                theme_writers[theme].write(
+                                    resource(filepath) + u'\n')
         f.flush()
     for writer in theme_writers.values():
         writer.flush()
@@ -1213,24 +1362,33 @@ def combine_css(path, container, settings_dir=None, log=True):
         container=container,
         url_prefix=url_prefix,
         embedded=embedded)
+    css_data += "\n/* ------ path: %s ------ */\n" % path
     # Overwrite it with the rendered version
     with io.open(path, 'wb') as f:
         f.write(css_data)
-    if log:
-        logging.info(_(
-            "Non-theme CSS has been combined and saved to: %s" % path))
+    logger.info(_("Non-theme CSS has been combined and saved to: %s" % path))
     for theme in theme_writers.keys():
         combined_theme_path = "%s_theme_%s" % (
             path.split('.css')[0], theme)
         template = loader.load(combined_theme_path)
-        css_data = template.generate(
+        css_data = (
+            "\n/* ------ combined_theme_path: %s ------ */\n"
+            % combined_theme_path)
+        css_data += template.generate(
             asis=asis,
             container=container,
             url_prefix=url_prefix,
             embedded=embedded)
+        new_css_data = '@charset "UTF-8";\n'
+        for line in css_data.split('\n'):
+            if '@charset' not in line:
+                new_css_data += line + '\n'
+        css_data = new_css_data
         with io.open(combined_theme_path, 'wb') as f:
             f.write(css_data)
-        if log:
-            logging.info(_(
-                "The %s theme CSS has been combined and saved to: %s"
-                % (theme.split('.css')[0], combined_theme_path)))
+        logger.info(_(
+            "The %s theme CSS has been combined and saved to: %s")
+            % (theme.split('.css')[0], combined_theme_path))
+    logger.info(_(
+        "Don't forget to set '\"send_css\": false' in your 10server.conf to "
+        "disable sending of CSS"))

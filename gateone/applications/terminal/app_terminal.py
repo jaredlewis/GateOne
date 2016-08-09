@@ -15,9 +15,11 @@ __version_info__ = (1, 2)
 __author__ = 'Dan McDougall <daniel.mcdougall@liftoffsoftware.com>'
 
 # Standard library imports
-import os, sys, time, io, atexit
+import os, sys, time, io, atexit, logging
 from datetime import datetime, timedelta
 from functools import partial
+# Pseudo stdlib
+from pkg_resources import resource_filename, resource_listdir, resource_string
 
 # Gate One imports
 from gateone import GATEONE_DIR, SESSIONS
@@ -26,11 +28,10 @@ from gateone.core.server import ApplicationWebSocket
 from gateone.auth.authorization import require, authenticated
 from gateone.auth.authorization import applicable_policies, policies
 from gateone.core.configuration import get_settings, RUDict
-from gateone.core.utils import cmd_var_swap, json_encode
-from gateone.core.utils import mkdir_p, get_plugins
+from gateone.core.utils import cmd_var_swap, json_encode, generate_session_id
+from gateone.core.utils import mkdir_p, entry_point_files
 from gateone.core.utils import process_opt_esc_sequence, bind, MimeTypeFail
-from gateone.core.utils import which
-from gateone.core.utils import short_hash, load_modules, create_data_uri
+from gateone.core.utils import short_hash, create_data_uri, which
 from gateone.core.locale import get_translation
 from gateone.core.log import go_logger, string_to_syslog_facility
 from gateone.applications.terminal.logviewer import main as logviewer_main
@@ -38,13 +39,11 @@ from gateone.applications.terminal.policy import terminal_policies
 
 # 3rd party imports
 from tornado.escape import json_decode
-from tornado.options import options, define
+from tornado.options import options, define, Error
 
 # Globals
-APPLICATION_PATH = os.path.split(__file__)[0] # Path to our application
 REGISTERED_HANDLERS = [] # So we don't accidentally re-add handlers
 web_handlers = [] # Assigned in init()
-term_log = go_logger("gateone.terminal")
 
 # Localization support
 _ = get_translation()
@@ -92,6 +91,7 @@ def kill_session(session, kill_dtach=False):
         `SESSIONS[session]["kill_session_callbacks"]` list inside of
         :meth:`TerminalApplication.authenticate`.
     """
+    term_log = go_logger("gateone.terminal")
     term_log.debug('kill_session(%s)' % session)
     if kill_dtach:
         from gateone.core.utils import kill_dtached_proc
@@ -117,6 +117,14 @@ def timeout_session(session):
 @atexit.register
 def quit():
     from gateone.core.utils import killall
+    try:
+        commands = options.parse_command_line()
+    except Error: # options.Error
+        return # Bad command line options provided--let the parent handle it
+    if commands or options.help:
+        # Don't call killall() if the user is invoking gateone --help or a
+        # CLI command like 'broadcast' or 'termlog'
+        return
     if not options.dtach:
         # If we're not using dtach play it safe by cleaning up any leftover
         # processes.  When passwords are used with the ssh_conenct.py script
@@ -135,14 +143,13 @@ class SharedTermHandler(BaseHandler):
         hostname = os.uname()[1]
         prefs = self.get_argument("prefs", None)
         gateone_js = "%sstatic/gateone.js" % self.settings['url_prefix']
-        minified_js_abspath = os.path.join(GATEONE_DIR, 'static')
-        minified_js_abspath = os.path.join(
-            minified_js_abspath, 'gateone.min.js')
+        minified_js_abspath = resource_filename(
+            'gateone', '/static/gateone.min.js')
         # Use the minified version if it exists
         if os.path.exists(minified_js_abspath):
             gateone_js = "%sstatic/gateone.min.js" % self.settings['url_prefix']
-        template_path = os.path.join(APPLICATION_PATH, 'templates')
-        index_path = os.path.join(template_path, 'share.html')
+        index_path = resource_filename(
+            'gateone.applications.terminal', '/templates/share.html')
         self.render(
             index_path,
             share_id=share_id,
@@ -177,7 +184,7 @@ class TerminalApplication(GOApplication):
     }
     name = "Terminal" # A user-friendly name that will be displayed to the user
     def __init__(self, ws):
-        term_log.debug("TerminalApplication.__init__(%s)" % ws)
+        logging.debug("TerminalApplication.__init__(%s)" % ws)
         self.policy = {} # Gets set in authenticate() below
         self.terms = {}
         self.loc_terms = {}
@@ -228,14 +235,14 @@ class TerminalApplication(GOApplication):
             'terminal:permissions': self.permissions,
             'terminal:new_share_id': self.new_share_id,
             'terminal:share_user_list': self.share_user_list,
-            #'terminal:unshare_terminal': self.unshare_terminal,
             'terminal:enumerate_commands': self.enumerate_commands,
             'terminal:enumerate_fonts': self.enumerate_fonts,
             'terminal:enumerate_colors': self.enumerate_colors,
             'terminal:list_shared_terminals': self.list_shared_terminals,
             'terminal:attach_shared_terminal': self.attach_shared_terminal,
             'terminal:detach_shared_terminal': self.detach_shared_terminal,
-            #'terminal:set_sharing_permissions': self.set_sharing_permissions,
+            'terminal:start_capture': self.start_capture,
+            'terminal:stop_capture': self.stop_capture,
             'terminal:debug_terminal': self.debug_terminal
         })
         if 'terminal' not in self.ws.persist:
@@ -244,23 +251,18 @@ class TerminalApplication(GOApplication):
         # load new plugins with a simple page reload)
         enabled_plugins = self.ws.prefs['*']['terminal'].get(
             'enabled_plugins', [])
-        self.plugins = get_plugins(
-            os.path.join(APPLICATION_PATH, 'plugins'), enabled_plugins)
-        py_plugins = []
-        for module_path in self.plugins['py']:
-            name = module_path.split('.')[-1]
-            py_plugins.append(name)
-        js_plugins = []
-        for js_path in self.plugins['js']:
-            name = js_path.split(os.path.sep)[0]
-            js_plugins.append(name)
-        css_plugins = []
-        for css_path in css_plugins:
-            name = css_path.split(os.path.sep)[-2]
-            css_plugins.append(name)
-        plugin_list = list(set(py_plugins + js_plugins + css_plugins))
-        plugin_list.sort() # So there's consistent ordering
-        term_log.info(_("Active Terminal Plugins: %s" % ", ".join(plugin_list)))
+        self.plugins = entry_point_files('go_terminal_plugins', enabled_plugins)
+        plugin_list = set()
+        for plugin in list(
+            self.plugins['py'].keys() +
+            self.plugins['js'].keys() +
+            self.plugins['css'].keys()):
+            if '.' in plugin:
+                plugin = plugin.split('.')[-1]
+            plugin_list.add(plugin)
+        plugin_list = sorted(plugin_list) # So there's consistent ordering
+        self.term_log.info(_(
+            "Active Terminal Plugins: %s" % ", ".join(plugin_list)))
         # Setup some events
         terminals_func = partial(self.terminals, self)
         self.ws.on("go:set_location", terminals_func)
@@ -268,10 +270,10 @@ class TerminalApplication(GOApplication):
         self.plugin_hooks = {}
         # TODO: Keep track of plugins and hooks to determine when they've
         #       changed so we can tell clients to pull updates and whatnot
-        imported = load_modules(self.plugins['py'])
-        for plugin in imported:
+        for name, plugin in self.plugins['py'].items():
             try:
-                self.plugin_hooks.update({plugin.__name__: plugin.hooks})
+                if hasattr(plugin, 'hooks'):
+                    self.plugin_hooks.update({plugin.__name__: plugin.hooks})
                 if hasattr(plugin, 'initialize'):
                     plugin.initialize(self)
             except AttributeError as e:
@@ -339,7 +341,7 @@ class TerminalApplication(GOApplication):
         This gets called at the end of :meth:`ApplicationWebSocket.open` when
         the WebSocket is opened.
         """
-        term_log.debug('TerminalApplication.open()')
+        self.term_log.debug('TerminalApplication.open()')
         self.callback_id = "%s;%s;%s" % (
             self.ws.client_id, self.request.host, self.request.remote_ip)
         self.trigger("terminal:open")
@@ -349,26 +351,24 @@ class TerminalApplication(GOApplication):
         Sends the client our standard CSS and JS.
         """
         # Render and send the client our terminal.css
-        templates_path = os.path.join(APPLICATION_PATH, 'templates')
-        terminal_css = os.path.join(templates_path, 'terminal.css')
+        terminal_css = resource_filename(
+            'gateone.applications.terminal', '/templates/terminal.css')
         self.render_and_send_css(terminal_css, element_id="terminal.css")
         # Send the client our JavaScript files
-        static_dir = os.path.join(APPLICATION_PATH, 'static')
-        js_files = os.listdir(static_dir)
+        js_files = resource_listdir('gateone.applications.terminal', '/static/')
         js_files.sort()
         for fname in js_files:
             if fname.endswith('.js'):
-                js_file_path = os.path.join(static_dir, fname)
+                js_file_path = resource_filename(
+                    'gateone.applications.terminal', '/static/%s' % fname)
                 if fname == 'terminal.js':
-                    self.ws.send_js(js_file_path,
-                    requires=["terminal.css"])
+                    self.ws.send_js(js_file_path, requires=["terminal.css"])
                 elif fname == 'terminal_input.js':
                     self.ws.send_js(js_file_path, requires="terminal.js")
                 else:
                     self.ws.send_js(js_file_path, requires='terminal_input.js')
         self.ws.send_plugin_static_files(
-            os.path.join(APPLICATION_PATH, 'plugins'),
-            application="terminal",
+            'go_terminal_plugins',
             requires=["terminal_input.js"])
         # Send the client the 256-color style information and our printing CSS
         self.send_256_colors()
@@ -381,7 +381,7 @@ class TerminalApplication(GOApplication):
         Sends all plugin JavaScript files to the client and triggers the
         'terminal:authenticate' event.
         """
-        term_log.debug('TerminalApplication.authenticate()')
+        self.term_log.debug('TerminalApplication.authenticate()')
         self.log_metadata = {
             'application': 'terminal',
             'upn': self.current_user['upn'],
@@ -447,13 +447,16 @@ class TerminalApplication(GOApplication):
                 sub_app = {'name': command}
             if 'icon' not in sub_app:
                 # Use the generic one
-                templates_path = os.path.join(APPLICATION_PATH, 'templates')
-                icon_path = os.path.join(templates_path, 'command_icon.svg')
-                with io.open(icon_path, encoding='utf-8') as f:
-                    sub_app['icon'] = f.read().format(cmd=sub_app['name'])
+                icon_path = resource_filename(
+                    'gateone.applications.terminal',
+                    '/templates/command_icon.svg')
+                sub_app_icon = resource_string(
+                    'gateone.applications.terminal',
+                    '/templates/command_icon.svg').decode('utf-8')
+                sub_app['icon'] = sub_app_icon.format(cmd=sub_app['name'])
             sub_apps.append(sub_app)
-        self.info['sub_applications'] = sub_apps
-        self.info['sub_applications'].sort()
+        self.info['sub_applications'] = sorted(
+            sub_apps, key=lambda k: k['name'])
         # NOTE: The user will often be authenticated before terminal.js is
         # loaded.  This means that self.terminals() will be ignored in most
         # cases (only when the connection lost and re-connected without a page
@@ -518,13 +521,14 @@ class TerminalApplication(GOApplication):
         Returns a JSON-encoded object containing the installed fonts.
         """
         from .woff_info import woff_info
-        fonts_path = os.path.join(APPLICATION_PATH, 'static', 'fonts')
-        fonts = os.listdir(fonts_path)
+        fonts = resource_listdir(
+            'gateone.applications.terminal', '/static/fonts')
         font_list = []
         for font in fonts:
             if not font.endswith('.woff'):
                 continue
-            font_path = os.path.join(fonts_path, font)
+            font_path = resource_filename(
+                'gateone.applications.terminal', '/static/fonts/%s' % font)
             font_info = woff_info(font_path)
             if "Font Family" not in font_info:
                 self.ws.logger.error(_(
@@ -550,13 +554,64 @@ class TerminalApplication(GOApplication):
         """
         font_family = settings['font_family']
         font_size = settings.get('font_size', '90%')
-        templates_path = templates_path = os.path.join(
-            APPLICATION_PATH, 'templates')
         filename = 'font.css'
-        font_css_path = os.path.join(templates_path, filename)
-
         # if font_family == 'monospace':
         # User wants the browser to control the font; real simple:
+        font_css_path = resource_filename(
+            'gateone.applications.terminal', '/templates/%s' % filename)
+        if font_family == 'monospace':
+            # User wants the browser to control the font; real simple:
+            rendered_path = self.render_style(
+                font_css_path,
+                force=True,
+                font_family=font_family,
+                font_size=font_size)
+            self.send_css(
+                rendered_path, element_id="terminal_font", filename=filename)
+            return
+        from .woff_info import woff_info
+        fonts = resource_listdir(
+            'gateone.applications.terminal', '/static/fonts')
+        woffs = {}
+        for font in fonts:
+            if not font.endswith('.woff'):
+                continue
+            font_path = resource_filename(
+                'gateone.applications.terminal', '/static/fonts/%s' % font)
+            font_info = woff_info(font_path)
+            if "Font Family" not in font_info:
+                self.ws.logger.error(_(
+                    "Bad font in fonts dir (missing Font Family in name "
+                    "table): %s" % font))
+                continue # Bad font
+            if font_info["Font Family"] == font_family:
+                font_dict = {
+                    "subfamily": font_info["Font Subfamily"],
+                    "font_style": "normal", # Overwritten below (if warranted)
+                    "font_weight": "normal", # Ditto
+                    "locals": "",
+                    "url": (
+                        "{server_url}terminal/static/fonts/{font}".format(
+                            server_url=self.ws.base_url,
+                            font=font)
+                    )
+                }
+                if "Full Name" in font_info:
+                    font_dict["locals"] += (
+                        "local('{0}')".format(font_info["Full Name"]))
+                if "Postscript Name" in font_info:
+                    font_dict["locals"] += (
+                        ", local('{0}')".format(font_info["Postscript Name"]))
+                if 'italic' in font_info["Font Subfamily"].lower():
+                    font_dict["font_style"] = "italic"
+                if 'oblique' in font_info["Font Subfamily"].lower():
+                    font_dict["font_style"] = "oblique"
+                if 'bold' in font_info["Font Subfamily"].lower():
+                    font_dict["font_weight"] = "bold"
+                woffs.update({font: font_dict})
+        # NOTE: Not using render_and_send_css() because the source CSS file will
+        # never change but the output will.
+>>>>>>> b24de28f40b729aa427d6d34d3a90e901c539533
         rendered_path = self.render_style(
             font_css_path,
             force=True,
@@ -620,8 +675,9 @@ class TerminalApplication(GOApplication):
         Returns a JSON-encoded object containing the installed text color
         schemes.
         """
-        colors_path = os.path.join(APPLICATION_PATH, 'templates', 'term_colors')
-        colors = os.listdir(colors_path)
+        colors = resource_listdir(
+            'gateone.applications.terminal', '/templates/term_colors')
+        colors = [a for a in colors if a.endswith('.css')]
         colors = [a.replace('.css', '') for a in colors]
         message = {'terminal:colors_list': {'colors': colors}}
         self.write_message(message)
@@ -719,7 +775,7 @@ class TerminalApplication(GOApplication):
             f.write(json_encode(term_settings))
         self.trigger("terminal:clear_term_settings", term)
 
-    @require(policies('terminal'))
+    @require(authenticated(), policies('terminal'))
     def terminals(self, *args, **kwargs):
         """
         Sends a list of the current open terminals to the client using the
@@ -741,6 +797,7 @@ class TerminalApplication(GOApplication):
                 terminals.update({
                     term: {
                         'metadata': self.loc_terms[term]['metadata'],
+                        'command': self.loc_terms[term]['command'],
                         'title': self.loc_terms[term]['title']
                     }})
                 share_id = self.loc_terms[term].get('share_id', None)
@@ -772,9 +829,11 @@ class TerminalApplication(GOApplication):
                                 continue
                             data = term_settings[self.ws.location][str(term)]
                             metadata = data.get('metadata', {})
+                            command = data.get('command', None)
                             title = data.get('title', 'Gate One')
                             terminals.update({term: {
                                 'metadata': metadata,
+                                'command': command,
                                 'title': title
                             }})
         self.trigger('terminal:terminals', terminals)
@@ -903,6 +962,7 @@ class TerminalApplication(GOApplication):
                 instance.
         """
         import termio
+        cls = TerminalApplication
         policies = applicable_policies(
             'terminal', self.current_user, self.ws.prefs)
         shell_command = policies.get('shell_command', None)
@@ -927,7 +987,7 @@ class TerminalApplication(GOApplication):
                 if not os.path.exists(log_dir):
                     mkdir_p(log_dir)
                 log_suffix = "-{0}.golog".format(
-                    self.current_user['ip_address'])
+                    self.current_user.get('ip_address', "0.0.0.0"))
                 log_name = datetime.now().strftime(
                     '%Y%m%d%H%M%S%f') + log_suffix
                 log_path = os.path.join(log_dir, log_name)
@@ -935,14 +995,14 @@ class TerminalApplication(GOApplication):
         # This allows plugins to transform the command however they like
         if self.plugin_command_hooks:
             for func in self.plugin_command_hooks:
-                cmd = func(self, cmd)
+                cmd = func(self, cmd, term=term_id)
         additional_log_metadata = {
-            'ip_address': self.current_user.get('ip_address', "")
+            'ip_address': self.current_user.get('ip_address', "0.0.0.0")
         }
         # This allows plugins to add their own metadata to .golog files:
         if self.plugin_log_metadata_hooks:
             for func in self.plugin_log_metadata_hooks:
-                metadata = func(self)
+                metadata = func(self, term=term_id)
                 additional_log_metadata.update(metadata)
         terminal_emulator_kwargs = {}
         if enabled_filetypes != 'all':
@@ -1000,10 +1060,14 @@ class TerminalApplication(GOApplication):
         without having to worry about figuring out if a new terminal already
         exists or not).
         """
-        term = int(settings['term'])
+        term = int(settings.get('term', self.highest_term_num() + 1))
         # TODO: Make these specific to each terminal:
-        rows = settings['rows']
-        cols = settings['columns']
+        rows = settings.get('rows', 24)
+        if not isinstance(rows, int):
+            rows = 24
+        cols = settings.get('columns', 80)
+        if not isinstance(cols, int):
+            cols = 80
         if rows < 2 or cols < 2: # Something went wrong calculating term size
             # Fall back to a standard default
             rows = 24
@@ -1033,6 +1097,7 @@ class TerminalApplication(GOApplication):
                    "settings (usually 50terminal.conf in %s)"
                    % settings_dir))
                 return
+        cmd_dtach_enabled = True
         # Get the full command
         try:
             full_command = policy['commands'][command]
@@ -1045,6 +1110,8 @@ class TerminalApplication(GOApplication):
             self.term_ended(term)
             return
         if isinstance(full_command, dict): # Extended command definition
+            # This lets you disable dtach on a per-command basis:
+            cmd_dtach_enabled = full_command.get('dtach', True)
             full_command = full_command['command']
         # Make a nice, useful logging line with extra metadata
         log_metadata = {
@@ -1104,7 +1171,7 @@ class TerminalApplication(GOApplication):
             if not os.path.exists(user_session_dir):
                 mkdir_p(user_session_dir)
                 os.chmod(user_session_dir, 0o770)
-            if options.dtach and which('dtach'):
+            if options.dtach and which('dtach') and cmd_dtach_enabled:
                 # Wrap in dtach (love this tool!)
                 dtach_path = "{session_dir}/dtach_{location}_{term}".format(
                     session_dir=user_session_dir,
@@ -1151,7 +1218,7 @@ class TerminalApplication(GOApplication):
             m.term.linkpath = "{server_url}downloads".format(
                 server_url=self.ws.base_url)
             # Make sure it can generate pretty icons for file downloads
-            m.term.icondir = os.path.join(GATEONE_DIR, 'static', 'icons')
+            m.term.icondir = resource_filename('gateone', '/static/icons')
             if resumed_dtach:
                 # Send an extra Ctrl-L to refresh the screen and fix the sizing
                 # after it has been reattached.
@@ -1203,7 +1270,8 @@ class TerminalApplication(GOApplication):
         # Calling save_term_settings() after the event is fired so that plugins
         # can modify the metadata before it gets saved.
         self.save_term_settings(
-            term, {'metadata': self.loc_terms[term]['metadata']})
+            term, {'command': command,
+                   'metadata': self.loc_terms[term]['metadata']})
 
     @require(authenticated(), policies('terminal'))
     def set_term_encoding(self, settings):
@@ -1264,6 +1332,66 @@ class TerminalApplication(GOApplication):
         self.write_message(message)
 
     @require(authenticated(), policies('terminal'))
+    def start_capture(self, term=None):
+        """
+        Starts capturing output for the terminal given via *term*.
+        The output will be saved to a temporary file and delivered to the client
+        when `TerminalApplication.stop_capture` is called.
+
+        If no *term* is given the currently-selected terminal will be used.
+        """
+        self.term_log.debug("start_capture(%s)" % repr(term))
+        from tempfile import NamedTemporaryFile
+        from .term_utils import capture_stream
+        if not term:
+            term = self.current_term
+        # Make a temporary file to save the terminal's output
+        capture_file = NamedTemporaryFile(prefix="go_term_cap", delete=False)
+        capture_path = capture_file.name
+        # Don't need the object anymore since we'll be using io.open():
+        capture_file.close() # Will get deleted in stop_capture()
+        capture_func = partial(capture_stream, self)
+        term_obj = self.loc_terms[term]
+        term_obj["capture"] = {
+            "output": io.open(capture_path, 'a', encoding="utf-8"),
+            "capture_func": capture_func # So we can call self.off() with it
+        }
+        self.on("terminal:refresh_screen", capture_func)
+
+    def stop_capture(self, term):
+        """
+        Stops capturing output for the given *term* by closing the open file
+        object and deleting the "capture" dict from the current instance of
+        `TerminalApplication.loc_terms[term]`.  The captured data will be sent
+        to the client via the 'terminal:captured_data' WebSocket action which
+        will included a dict like so::
+
+            {"term": 1, "data": "$ ls\nfile1 file2\n$ " }
+        """
+        self.term_log.debug("stop_capture(%s)" % term)
+        if term not in self.loc_terms:
+            return # Nothing to do
+        term_obj = self.loc_terms[term]
+        if 'capture' not in term_obj:
+            return # Nothing to do
+        capture = term_obj["capture"]["output"]
+        capture_path = capture.name
+        capture.flush()
+        capture.close()
+        capture_func = term_obj["capture"]["capture_func"]
+        self.off("terminal:refresh_screen", capture_func)
+        capture_data = open(capture_path, 'rb').read()
+        capture_dict = {
+            'term': term,
+            'data': capture_data
+        }
+        # Cleanup
+        os.remove(capture_path)
+        del term_obj["capture"]
+        message = {'terminal:captured_data': capture_dict}
+        self.write_message(message)
+
+    @require(authenticated(), policies('terminal'))
     def swap_terminals(self, settings):
         """
         Swaps the numbers of *settings['term1']* and *settings['term2']*.
@@ -1281,8 +1409,16 @@ class TerminalApplication(GOApplication):
             return
         term1_dict = self.loc_terms.pop(term1)
         term2_dict = self.loc_terms.pop(term2)
+        self.remove_terminal_callbacks(
+            term1_dict['multiplex'], self.callback_id)
+        self.remove_terminal_callbacks(
+            term2_dict['multiplex'], self.callback_id)
         self.loc_terms.update({term1: term2_dict})
         self.loc_terms.update({term2: term1_dict})
+        self.add_terminal_callbacks(
+            term1, term2_dict['multiplex'], self.callback_id)
+        self.add_terminal_callbacks(
+            term2, term1_dict['multiplex'], self.callback_id)
         self.trigger("terminal:swap_terminals", term1, term2)
 
     @require(authenticated(), policies('terminal'))
@@ -1598,7 +1734,7 @@ class TerminalApplication(GOApplication):
                 multiplex.remove_callback( # Stop trying to write
                     multiplex.CALLBACK_UPDATE, self.callback_id)
 
-    def refresh_screen(self, term, full=False):
+    def refresh_screen(self, term, full=False, stream=None):
         """
         Writes the state of the given terminal's screen and scrollback buffer to
         the client using `_send_refresh()`.  Also ensures that screen updates
@@ -1608,6 +1744,12 @@ class TerminalApplication(GOApplication):
         too).
 
         If *full*, send the whole screen (not just the difference).
+
+        The *stream* argument is meant to contain the raw character stream that
+        resulted in the terminal screen being updated.  It is only used to pass
+        the data through to the 'terminal:refresh_screen' event.  This event is
+        and that raw data is used by the `TerminalApplication.start_capture` and
+        `TerminalApplication.stop_capture` methods.
         """
         # Commented this out because it was getting annoying.
         # Note to self: add more levels of debugging beyond just "debug".
@@ -1648,7 +1790,7 @@ class TerminalApplication(GOApplication):
                     msec, refresh)
         except KeyError as e: # Session died (i.e. command ended).
             self.term_log.debug(_("KeyError in refresh_screen: %s" % e))
-        self.trigger("terminal:refresh_screen", term)
+        self.trigger("terminal:refresh_screen", term, stream=stream)
 
     def full_refresh(self, term):
         """Calls `self.refresh_screen(*term*, full=True)`"""
@@ -1781,7 +1923,7 @@ class TerminalApplication(GOApplication):
 
         .. ansi-block::
 
-            $ echo -e "\033]_;somename|Text passed to some_function()\007"
+            $ echo -e "\\033]_;somename|Text passed to some_function()\\007"
 
         Which would result in :func:`some_function` being called like so::
 
@@ -1810,16 +1952,14 @@ class TerminalApplication(GOApplication):
         """
         Sends the bell sound data to the client in in the form of a data::URI.
         """
-        bell_path = os.path.join(APPLICATION_PATH, 'static')
-        bell_path = os.path.join(bell_path, 'bell.ogg')
+        bell_path = resource_filename(
+            'gateone.applications.terminal', '/static/bell.ogg')
         try:
             bell_data_uri = create_data_uri(bell_path)
         except (IOError, MimeTypeFail): # There's always the fallback
             self.term_log.error(_("Could not load bell: %s") % bell_path)
-            fallback_path = os.path.join(
-                APPLICATION_PATH, 'static', 'fallback_bell.txt')
-            with io.open(fallback_path, encoding='utf-8') as f:
-                bell_data_uri = f.read()
+            bell_data_uri = resource_string(
+                'gateone.applications.terminal', '/static/fallback_bell.txt')
         mimetype = bell_data_uri.split(';')[0].split(':')[1]
         message = {
             'terminal:load_bell': {
@@ -1834,11 +1974,9 @@ class TerminalApplication(GOApplication):
         around the limitations of loading remote Web Worker URLs (for embedding
         Gate One into other apps).
         """
-        static_url = os.path.join(APPLICATION_PATH, "static")
-        webworker_path = os.path.join(static_url, 'webworkers', 'term_ww.js')
-        with io.open(webworker_path, encoding='utf-8') as f:
-            go_process = f.read()
-        message = {'terminal:load_webworker': go_process}
+        go_process = resource_string(
+            'gateone.applications.terminal', '/static/webworkers/term_ww.js')
+        message = {'terminal:load_webworker': go_process.decode('utf-8')}
         self.write_message(json_encode(message))
 
     def get_colors(self, settings):
@@ -1857,10 +1995,10 @@ class TerminalApplication(GOApplication):
             # So we don't repeat this message a zillion times in the logs:
             self.logged_css_message = True
             return
-        templates_path = os.path.join(APPLICATION_PATH, 'templates')
-        term_colors_path = os.path.join(templates_path, 'term_colors')
         colors_filename = "%s.css" % settings["colors"]
-        colors_path = os.path.join(term_colors_path, colors_filename)
+        colors_path = resource_filename(
+            'gateone.applications.terminal',
+            '/templates/term_colors/%s' % colors_filename)
         filename = "term_colors.css" # Make sure it's the same every time
         self.render_and_send_css(colors_path,
             element_id="text_colors", filename=filename)
@@ -2150,6 +2288,8 @@ class TerminalApplication(GOApplication):
         from gateone.core.utils import random_words
         if 'term' not in settings:
             return # Invalid
+        if 'shared' not in self.ws.persist['terminal']:
+            return # Nothing to do
         term = int(settings.get('term', self.current_term))
         random_share_id = '-'.join(random_words(2))
         new_share_id = settings.get('share_id', random_share_id)
@@ -2475,13 +2615,15 @@ class TerminalApplication(GOApplication):
         term_obj = self.loc_terms[term]
         multiplex = term_obj['multiplex']
         shared_terms = self.ws.persist['terminal'].get('shared', {})
+        if not shared_terms:
+            return # Nothing to do
         share_obj = []
         for share_id, share_dict in shared_terms.items():
             if term_obj == share_dict['term_obj']:
                 share_obj = share_dict
                 break # This is the share dict we want
         # Remove ourselves from the list of viewers for this terminal
-        for viewer in list(share_obj['viewers']):
+        for viewer in list(share_dict['viewers']):
             if viewer['client_id'] == self.ws.client_id:
                 share_obj['viewers'].remove(viewer)
         try:
@@ -2512,8 +2654,8 @@ class TerminalApplication(GOApplication):
         cached_256_colors = os.path.join(cache_dir, '256_colors.css')
         if os.path.exists(cached_256_colors):
             return cached_256_colors
-        colors_json_path = os.path.join(
-            APPLICATION_PATH, 'static', '256colors.json')
+        colors_json_path = resource_filename(
+            'gateone.applications.terminal', '/static/256colors.json')
         color_map = get_settings(colors_json_path, add_default=False)
         # Setup our 256-color support CSS:
         colors_256 = ""
@@ -2524,10 +2666,10 @@ class TerminalApplication(GOApplication):
             bg = "#%s span.✈bx%s {background-color: #%s;} " % (
                 self.ws.container, i, color_map[i])
             fg_rev =(
-                "#%s span.✈reverse.fx%s {background-color: #%s; color: "
+                "#%s span.✈reverse.✈fx%s {background-color: #%s; color: "
                 "inherit;}" % (self.ws.container, i, color_map[i]))
             bg_rev =(
-                "#%s span.✈reverse.bx%s {color: #%s; background-color: "
+                "#%s span.✈reverse.✈bx%s {color: #%s; background-color: "
                 "inherit;} " % (self.ws.container, i, color_map[i]))
             colors_256 += "%s %s %s %s\n" % (fg, bg, fg_rev, bg_rev)
         with io.open(cached_256_colors, 'w', encoding="utf-8") as f:
@@ -2547,8 +2689,8 @@ class TerminalApplication(GOApplication):
         using `ApplicationWebSocket.ws.send_css` with the "media" set to
         "print".
         """
-        print_css_path = os.path.join(
-            APPLICATION_PATH, 'templates', 'printing', 'printing.css')
+        print_css_path = resource_filename(
+            'gateone.applications.terminal', '/templates/printing/printing.css')
         self.render_and_send_css(
             print_css_path, element_id="terminal_print_css", media="print")
 
@@ -2571,13 +2713,14 @@ class TerminalApplication(GOApplication):
         for i, line in enumerate(screen):
             # This gets rid of images:
             line = [a for a in line if len(a) == 1]
-            print("%s:%s" % (i, "".join(line)))
-            print(renditions[i])
+            logging.info("%s:%s" % (i, "".join(line)))
+            logging.info(renditions[i])
         try:
             from pympler import asizeof
-            print("screen size: %s" % asizeof.asizeof(screen))
-            print("renditions size: %s" % asizeof.asizeof(renditions))
-            print("Total term object size: %s" % asizeof.asizeof(term_obj))
+            logging.info("screen size: %s" % asizeof.asizeof(screen))
+            logging.info("renditions size: %s" % asizeof.asizeof(renditions))
+            logging.info(
+                "Total term object size: %s" % asizeof.asizeof(term_obj))
         except ImportError:
             pass # No biggie
         self.ws.debug() # Do regular debugging as well
@@ -2617,7 +2760,9 @@ def init(settings):
 
     Also checks to make sure that the logviewer.py script is executable.
     """
-    logviewer_path = os.path.join(APPLICATION_PATH, 'logviewer.py')
+    term_log = go_logger("gateone.terminal")
+    logviewer_path = resource_filename(
+        'gateone.applications.terminal', '/logviewer.py')
     import stat
     st = os.stat(logviewer_path)
     if not bool(st.st_mode & stat.S_IXOTH):
@@ -2666,18 +2811,19 @@ def init(settings):
         terminal_conf_path = os.path.join(settings_path, '50terminal.conf')
         if not os.path.exists(terminal_conf_path):
             from gateone.core.configuration import settings_template
-            # TODO: Think about moving 50terminal.conf template into the
-            # terminal application's directory.
-            template_path = os.path.join(
-                GATEONE_DIR, 'templates', 'settings', '50terminal.conf')
+            template_path = resource_filename(
+                'gateone.applications.terminal',
+                '/templates/settings/50terminal.conf')
             settings['*']['terminal'] = {}
             # Update the settings with defaults
+            ssh_connect_path = resource_filename(
+                'gateone.applications.terminal',
+                '/plugins/ssh/scripts/ssh_connect.py')
             default_command = (
-              GATEONE_DIR +
-              "/applications/terminal/plugins/ssh/scripts/ssh_connect.py -S "
+              "{0} -S "
               r"'%SESSION_DIR%/%SESSION%/%SHORT_SOCKET%' --sshfp "
               r"-a '-oUserKnownHostsFile=\"%USERDIR%/%USER%/.ssh/known_hosts\"'"
-            )
+            ).format(ssh_connect_path)
             settings['*']['terminal'].update({
                 'dtach': True,
                 'session_logging': True,
@@ -2725,41 +2871,35 @@ def init(settings):
             term_settings['commands'][name] = command.replace('/ssh/', '/.ssh/')
     # Initialize plugins so we can add their 'Web' handlers
     enabled_plugins = settings['*']['terminal'].get('enabled_plugins', [])
-    plugins_path = os.path.join(APPLICATION_PATH, 'plugins')
-    plugins = get_plugins(plugins_path, enabled_plugins)
+    plugins = entry_point_files('go_terminal_plugins', enabled_plugins)
     # Attach plugin hooks
     plugin_hooks = {}
-    imported = load_modules(plugins['py'])
-    for plugin in imported:
+    for name, plugin in plugins['py'].items():
         try:
             plugin_hooks.update({plugin.__name__: plugin.hooks})
         except AttributeError:
             pass # No hooks, no problem
     # Add static handlers for all the JS plugins (primarily for source maps)
     url_prefix = settings['*']['gateone']['url_prefix']
-    plugin_dirs = os.listdir(plugins_path)
-    # Remove anything that isn't a directory (just in case)
-    plugin_dirs = [
-        a for a in plugin_dirs
-            if os.path.isdir(os.path.join(plugins_path, a))
-    ]
-    if not enabled_plugins: # Use all of them
-        enabled_plugins = plugin_dirs
-    for plugin_name in enabled_plugins:
+    plugins = set(
+        plugins['py'].keys() + plugins['js'].keys() + plugins['css'].keys())
+    for plugin in plugins:
+        name = plugin.split('.')[-1]
         plugin_static_url = r"{prefix}terminal/{name}/static/(.*)".format(
-            prefix=url_prefix, name=plugin_name)
-        static_path = os.path.join(
-            APPLICATION_PATH, 'plugins', plugin_name, 'static')
-        if os.path.exists(static_path):
-            handler = (
-                plugin_static_url, StaticHandler, {"path": static_path})
-            if handler not in REGISTERED_HANDLERS:
-                REGISTERED_HANDLERS.append(handler)
-                web_handlers.append(handler)
+            prefix=url_prefix, name=name)
+        handler = (plugin_static_url, StaticHandler, {
+            "path": '/static/',
+            'use_pkg': plugin
+        })
+        if handler not in REGISTERED_HANDLERS:
+            REGISTERED_HANDLERS.append(handler)
+            web_handlers.append(handler)
     # Hook up the 'Web' handlers so those URLs are immediately available
     for hooks in plugin_hooks.values():
         if 'Web' in hooks:
             for handler in hooks['Web']:
+                if not handler[0].startswith(url_prefix): # Fix it
+                    handler = (url_prefix + handler[0].lstrip('/'), handler[1])
                 if handler in REGISTERED_HANDLERS:
                     continue # Already registered this one
                 else:
@@ -2773,11 +2913,14 @@ apps = [TerminalApplication]
 web_handlers.append((
     r'terminal/static/(.*)',
     TermStaticFiles,
-    {"path": os.path.join(APPLICATION_PATH, 'static')}
+    {"path": resource_filename('gateone.applications.terminal', '/static')}
 ))
 web_handlers.append((r'terminal/shared/(.*)', SharedTermHandler))
 
 # Command line argument commands
 commands = {
-    'termlog': logviewer_main
+    'termlog': {
+        'function': logviewer_main,
+        'description': _("View terminal session logs.")
+    }
 }

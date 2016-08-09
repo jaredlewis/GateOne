@@ -1,15 +1,16 @@
 
-GateOne.Base.superSandbox("GateOne.Terminal.Input", ["GateOne.Terminal", "GateOne.User"], function(window, undefined) {
+GateOne.Base.superSandbox("GateOne.Terminal.Input", ["GateOne.Terminal", "GateOne.User", "GateOne.Input"], function(window, undefined) {
 "use strict";
 
 // Sandbox-wide shortcuts
 var go = GateOne,
     prefix = go.prefs.prefix,
     t = go.Terminal,
-    i = go.Input, // Not the same as GateOne.Terminal.Input!
+    I = go.Input, // Not the same as GateOne.Terminal.Input!
     u = go.Utils,
     v = go.Visual,
     E = go.Events,
+    gettext = go.i18n.gettext,
     ESC = String.fromCharCode(27),
     logFatal = GateOne.Logging.logFatal,
     logError = GateOne.Logging.logError,
@@ -114,7 +115,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         */
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
             m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             button,
             termObj = go.Terminal.terminals[selectedTerm],
             termNode = termObj['node'],
@@ -153,7 +154,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         If the ``Alt`` key is held while right-clicking the normal context menu will appear.
         */
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
-            modifiers = i.modifiers(e);
+            modifiers = I.modifiers(e);
         if (go.Terminal.terminals[selectedTerm]['mouse'] == "mouse_button_motion") {
             if (!modifiers.alt) {
                 e.preventDefault();
@@ -197,7 +198,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         // TODO: Add a shift-click context menu for special operations.  Why shift and not ctrl-click or alt-click?  Some platforms use ctrl-click to emulate right-click and some platforms use alt-click to move windows around.
         logDebug("GateOne.Terminal.Input.onMouseDown() button: " + e.button + ", which: " + e.which);
         var m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             X, Y, button, className, // Used by mouse coordinates/tracking stuff
             selectedTerm = localStorage[prefix+'selectedTerminal'],
             selectedPastearea = null,
@@ -305,7 +306,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
             selectedText = u.getSelText(),
             m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             X, Y, button, className, // Used by mouse coordinates/tracking stuff
             elementUnder = document.elementFromPoint(e.clientX, e.clientY);
         logDebug("GateOne.Terminal.Input.onMouseUp: e.button: " + e.button + ", e.which: " + e.which);
@@ -396,11 +397,18 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         t.Input.inputNode.focus();
     },
     onCopy: function() {
-        /**:GateOne.Terminal.Input.onCopy()
+        /**:GateOne.Terminal.Input.onCopy(e)
 
-        Returns all 'pastearea' elements to a visible state after a copy operation so that the browser's regular context menu will be usable again (for pasting).
+        Returns all 'pastearea' elements to a visible state after a copy operation so that the browser's regular context menu will be usable again (for pasting).  Also displays a message to the user letting them know that the text was copied successfully (because having your highlighted text suddenly disappear isn't that intuitive).
         */
-        u.showElements('.✈pastearea');
+        if (go.User.activeApplication == 'Terminal') {
+            setTimeout(function() {
+                // For some reason we have to remove the current selection for Firefox to bring the pastearea to the foreground (so the user can right-click to paste):
+                window.getSelection().removeAllRanges();
+                u.showElements('.✈pastearea');
+            }, 50);
+            v.displayMessage(gettext("Text copied to clipboard."));
+        }
     },
     capture: function() {
         /**:GateOne.Terminal.Input.capture()
@@ -411,19 +419,24 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         var terms = u.toArray(u.getNodes('.✈terminal')),
             selectedText = u.getSelText();
         if (!t.Input.inputNode) {
-            t.Input.inputNode = u.createElement('textarea', {'class': '✈IME', 'style': {'position': 'fixed', 'z-index': 99999, 'top': '-9999px', 'left': '-9999px', 'autocapitalize': 'off', 'autocomplete': 'off', 'autocorrect': 'off', 'spellcheck': 'false'}});
+            t.Input.inputNode = u.createElement('textarea', {'class': '✈IME', 'style': {'position': 'fixed', 'z-index': 99999, 'top': '0px', 'autocapitalize': 'off', 'autocomplete': 'off', 'autocorrect': 'off', 'spellcheck': 'false'}});
             go.node.appendChild(t.Input.inputNode);
             t.Input.inputNode.addEventListener('compositionstart', t.Input.onCompositionStart, true);
             t.Input.inputNode.addEventListener('compositionupdate', t.Input.onCompositionUpdate, true);
             t.Input.inputNode.addEventListener('compositionend', t.Input.onCompositionEnd, true);
+            E.on('go:app_chooser', function(workspace) {
+                t.Input.disableCapture(null, true); // Force capture off when bringing up the application chooser
+            });
         }
         u.showElement(t.Input.inputNode);
         if (!t.Input.addedEventListeners) {
             t.Input.inputNode.addEventListener('input', t.Input.onInput, false);
             t.Input.inputNode.tabIndex = 1; // Just in case--this is necessary to set focus
-            go.node.addEventListener('keydown', t.Input.onKeyDown, true);
-            go.node.addEventListener('keyup', t.Input.onKeyUp, true);
+            t.Input.inputNode.addEventListener('paste', t.Input.onPaste, false);
             t.Input.inputNode.addEventListener('blur', t.Input.disableCapture, true);
+            t.Input.inputNode.addEventListener('keydown', t.Input.onKeyDown, true);
+            t.Input.inputNode.addEventListener('keyup', t.Input.onKeyUp, true);
+            go.node.addEventListener('copy', t.Input.onCopy, false);
             terms.forEach(function(termNode) {
                 termNode.addEventListener('copy', t.Input.onCopy, false);
                 termNode.addEventListener('paste', t.Input.onPaste, false);
@@ -445,7 +458,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         Disables the various input events that capture mouse and keystroke events.  This allows things like input elements and forms to work properly (so keystrokes can pass through without intervention).
         */
-        logDebug('go.Terminal.Input.disableCapture()');
+        logDebug('go.Terminal.Input.disableCapture()', e);
         var terms = u.toArray(u.getNodes('.✈terminal'));
         if (!force) {
             if (t.switchedWorkspace) {
@@ -467,14 +480,16 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 return; // Act as if we were never called to avoid flashing the overlay
             }
         }
-        if (t.Input.InputNode) {
+        if (t.Input.inputNode) {
             t.Input.inputNode.removeEventListener('input', t.Input.onInput, false);
             t.Input.inputNode.tabIndex = null;
+            t.Input.inputNode.removeEventListener('paste', t.Input.onPaste, false);
             t.Input.inputNode.removeEventListener('blur', t.Input.disableCapture, true);
+            t.Input.inputNode.removeEventListener('keydown', t.Input.onKeyDown, true);
+            t.Input.inputNode.removeEventListener('keyup', t.Input.onKeyUp, true);
             u.hideElement(t.Input.inputNode);
         }
-        go.node.removeEventListener('keydown', t.Input.onKeyDown, true);
-        go.node.removeEventListener('keyup', t.Input.onKeyUp, true);
+        go.node.removeEventListener('copy', t.Input.onCopy, false);
         terms.forEach(function(termNode) {
             termNode.removeEventListener('copy', t.Input.onCopy, false);
             termNode.removeEventListener('paste', t.Input.onPaste, false);
@@ -488,15 +503,14 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         });
         t.Input.addedEventListeners = false;
         // TODO: Check to see if this should stay in GateOne.Input:
-        i.metaHeld = false; // This can get stuck at 'true' if the uses does something like command-tab to switch applications.
+        I.metaHeld = false; // This can get stuck at 'true' if the uses does something like command-tab to switch applications.
     },
     onPaste: function(e) {
         /**:GateOne.Terminal.Input.onPaste(e)
 
         Attached to the 'paste' event on the terminal application container; converts pasted text to plaintext and sends it to the selected terminal.
         */
-        var goDiv = go.node;
-        logDebug("go.Terminal.Input.onPaste() goDiv registered paste event.");
+        logDebug("go.Terminal.Input.onPaste() registered paste event.");
         if (document.activeElement.tagName == "INPUT" || document.activeElement.tagName == "TEXTAREA" || document.activeElement.tagName == "SELECT" || document.activeElement.tagName == "BUTTON") {
             return; // Don't do anything if the user is editing text in an input/textarea or is using a select element (so the up/down arrows work)
         }
@@ -574,8 +588,8 @@ GateOne.Base.update(GateOne.Terminal.Input, {
             t.sendString(t.Input.composition);
             t.Input.commandBuffer += t.Input.composition;
         }
-        t.Input.inputNode.style['top'] = "-99999px";
-        t.Input.inputNode.style['left'] = "-99999px";
+        t.Input.inputNode.style['top'] = "0px";
+        t.Input.inputNode.style['left'] = null;
         setTimeout(function() {
             // Wrapped in a timeout because Firefox fires the onkeyup event immediately after compositionend and we don't want that to result in double keystrokes
             t.Input.composition = null;
@@ -598,8 +612,9 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         Called when the terminal encounters a `keyup` event; just ensures that `GateOne.Terminal.Input.inputNode` is emptied so we don't accidentally send characters we shouldn't.
         */
         // Used in conjunction with GateOne.Input.modifiers() and GateOne.Input.onKeyDown() to emulate the meta key modifier using KEY_WINDOWS_LEFT and KEY_WINDOWS_RIGHT since "meta" doesn't work as an actual modifier on some browsers/platforms.
-        var modifiers = i.modifiers(e);
-        logDebug('GateOne.Terminal.Input.onKeyUp()');
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
+        logDebug('GateOne.Terminal.Input.onKeyUp()', e);
         if (!t.Input.composition) {
             // If a non-shift modifier was depressed, emulate the given keystroke:
             if (!(modifiers.alt || modifiers.ctrl || modifiers.meta)) {
@@ -608,14 +623,14 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 t.Input.inputNode.value = ""; // Keep it empty until needed
             }
         }
-        E.trigger("terminal:onkeyup", e);
+        E.trigger("terminal:keyup:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
     },
     onInput: function(e) {
         /**:GateOne.Terminal.Input.onInput(e)
 
         Attached to the `input` event on `GateOne.Terminal.Input.inputNode`; sends its contents.  If the user is in the middle of composing text via an `IME <http://en.wikipedia.org/wiki/Input_method>`_ it will wait until their composition is complete before sending the characters.
         */
-        logDebug("go.Terminal.Input.onInput()");
+        logDebug("go.Terminal.Input.onInput()", e);
         var inputNode = t.Input.inputNode,
             value = inputNode.value;
         if (!t.Input.composition) {
@@ -631,15 +646,15 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         Handles keystroke events by determining which kind of event occurred and how/whether it should be sent to the server as specific characters or escape sequences.
         */
         // NOTE:  In order for e.preventDefault() to work in canceling browser keystrokes like Ctrl-C it must be called before keyup.
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
-            term = localStorage[go.prefs.prefix+'selectedTerminal'];
-        logDebug("go.Terminal.Input.onKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
-        if (i.handledGlobal) {
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
+            term = localStorage[prefix+'selectedTerminal'];
+        logDebug("GateOne.Terminal.Input.onKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
+        if (I.handledGlobal) {
             // Global shortcuts take precedence
             return;
         }
-        E.trigger("terminal:onkeydown", e); // Placed before the execKeystroke() call below so the event can be manipulated beforehand.
+        E.trigger("terminal:keydown:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
         t.Input.execKeystroke(e);
     },
     execKeystroke: function(e) {
@@ -647,11 +662,11 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         For the Terminal application, executes the keystroke or shortcut associated with the given keydown event (*e*).
         */
-        logDebug('GateOne.Terminal.Input.execKeystroke()');
-        var key = i.key(e),
-            modifiers = i.modifiers(e);
+        logDebug('GateOne.Terminal.Input.execKeystroke()', e);
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
         if (key.string == 'KEY_WINDOWS_LEFT' || key.string == 'KEY_WINDOWS_RIGHT') {
-            i.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
+            I.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
             return true; // Save some CPU
         }
         if (t.Input.composition) {
@@ -674,15 +689,15 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         .. note:: :kbd:`Shift+key` also winds up being handled by this function.
         */
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
             buffer = t.Input.bufferEscSeq,
             q = function(c) {
                 e.preventDefault();
                 t.Input.queue(c);
             },
             term = localStorage[prefix+'selectedTerminal'];
-        logDebug("emulateKey() term: " +term+ ", key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
+        logDebug("emulateKey() term: " + term + ", key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
         t.Input.sentBackspace = false;
         // Need some special logic for the F11 key since it controls fullscreen mode and without it, users could get stuck in fullscreen mode.
         if (!modifiers.shift && t.Input.F11 === true && !skipF11check) { // This is the *second* time F11 was pressed within 0.750 seconds.
@@ -698,7 +713,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 t.Input.emulateKey(e, true); // Pretend this never happened
                 t.Input.sendChars();
             }, 750);
-            v.displayMessage("NOTE: Rapidly pressing F11 twice will enable/disable fullscreen mode.");
+            v.displayMessage(gettext("NOTE: Rapidly pressing F11 twice will enable/disable fullscreen mode."));
             return;
         }
         if (key.string == "KEY_UNKNOWN") {
@@ -746,7 +761,9 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                         }
                     }
                 } else { // Shift was held down
-                    if (t.Input.keyTable[key.string]['shift']) {
+                    if (key.string == 'KEY_INSERT') {
+                        t.paste(e);
+                    } else if (t.Input.keyTable[key.string]['shift']) {
                         q(t.Input.keyTable[key.string]['shift']);
                     // This allows the browser's native pgup and pgdown to scroll up and down when the shift key is held:
                     } else if (key.string == 'KEY_PAGE_UP') {
@@ -769,8 +786,8 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         This method translates ctrl/alt/meta key combos such as :kbd:`Ctrl-c` into their string equivalents using `GateOne.Terminal.Input.keyTable` and sends them to the server.
         */
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
             term = localStorage[prefix+'selectedTerminal'],
             keyboard = t.terminals[term]['keyboard'],
             buffer = t.Input.bufferEscSeq,
@@ -782,7 +799,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         if (key.string == "KEY_SHIFT" || key.string == "KEY_ALT" || key.string == "KEY_CTRL" || key.string == "KEY_WINDOWS_LEFT" || key.string == "KEY_WINDOWS_RIGHT" || key.string == "KEY_UNKNOWN") {
             return; // For some reason if you press any combo of these keys at the same time it occasionally will send the keystroke as the second key you press.  It's odd but this ensures we don't act upon such things.
         }
-        logDebug("go.Terminal.Input.emulateKeyCombo() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
+        logDebug("GateOne.Terminal.Input.emulateKeyCombo() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
         // Handle ctrl-<key> and ctrl-shift-<key> combos
         if (modifiers.ctrl && !modifiers.alt && !modifiers.meta) {
             if (t.Input.keyTable[key.string]) {
@@ -924,19 +941,6 @@ GateOne.Base.update(GateOne.Terminal.Input, {
             }
         }
     },
-    handleVisibility: function(e) {
-        // Calls GateOne.Terminal.Input.capture() when the page becomes visible again *if* goDiv had focus before the document went invisible
-        if (!u.isPageHidden()) {
-            // Page has become visibile again
-            logDebug("Ninja Mode disabled.");
-            if (document.activeElement == go.node) {
-                // Gate One was active when the page became hidden
-                t.Input.capture(); // Resume keyboard input
-            }
-        } else {
-            logDebug("Ninja Mode!  Gate One has become hidden.");
-        }
-    },
     // TODO: Add a GUI for configuring the keyboard.
     // TODO: Remove the 'xterm' values and instead make an xterm-specific keyTable that only contains the difference.  Then change the logic in the keypress functions to first check for overridden values before falling back to the default keyTable.
     keyTable: {
@@ -952,6 +956,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         'KEY_8': {'alt': ESC+"8", 'ctrl': String.fromCharCode(32), 'ctrl-shift': String.fromCharCode(32)},
         'KEY_9': {'alt': ESC+"9", 'ctrl': "9", 'ctrl-shift': "9"},
         'KEY_0': {'alt': ESC+"0", 'ctrl': "0", 'ctrl-shift': "0"},
+        'KEY_G': {'altgr': "@"},
         // NOTE to self: xterm/vt100/vt220, for 'linux' (and possibly others) use [[A, [[B, [[C, [[D, and [[E
         'KEY_F1': {'default': ESC+"OP", 'alt': ESC+"O3P", 'sco': ESC+"[M", 'sco-ctrl': ESC+"[k"},
         'KEY_F2': {'default': ESC+"OQ", 'alt': ESC+"O3Q", 'sco': ESC+"[N", 'sco-ctrl': ESC+"[l"},
@@ -1054,9 +1059,9 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         'KEY_FULL_STOP': {'alt': ESC+".", 'alt-shift': ESC+">"},
         'KEY_SOLIDUS': {'alt': ESC+"/", 'alt-shift': ESC+"?", 'ctrl': String.fromCharCode(31), 'ctrl-shift': String.fromCharCode(31)},
         'KEY_GRAVE_ACCENT':  {'alt': ESC+"`", 'alt-shift': ESC+"~", 'ctrl-shift': String.fromCharCode(30)},
-        'KEY_LEFT_SQUARE_BRACKET':  {'alt': ESC+"[", 'alt-shift': ESC+"{", 'ctrl': ESC},
-        'KEY_REVERSE_SOLIDUS':  {'alt': ESC+"\\", 'alt-shift': ESC+"|", 'ctrl': String.fromCharCode(28)},
-        'KEY_RIGHT_SQUARE_BRACKET':  {'alt': ESC+"]", 'alt-shift': ESC+"}", 'ctrl': String.fromCharCode(29)},
+        'KEY_LEFT_SQUARE_BRACKET':  {'altgr': "[", 'alt-shift': ESC+"{", 'ctrl': ESC},
+        'KEY_REVERSE_SOLIDUS':  {'altgr': "|", 'altgr-shift': "\\"},
+        'KEY_RIGHT_SQUARE_BRACKET':  {'altgr': "]", 'alt-shift': ESC+"}", 'ctrl': String.fromCharCode(29)},
         'KEY_APOSTROPHE': {'alt': ESC+"'", 'alt-shift': ESC+'"'}
     }
 });
