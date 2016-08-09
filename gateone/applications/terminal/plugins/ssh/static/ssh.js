@@ -1,5 +1,5 @@
 
-GateOne.Base.superSandbox("GateOne.SSH", ["GateOne.Bookmarks", "GateOne.Terminal", "GateOne.Terminal.Input"], function(window, undefined) {
+GateOne.Base.superSandbox("GateOne.SSH", ["GateOne.Bookmarks", "GateOne.Terminal", "GateOne.Terminal.Input", "GateOne.Editor"], function(window, undefined) {
 "use strict";
 
 // Sandbox-wide shortcuts
@@ -39,6 +39,7 @@ go.Base.update(go.SSH, {
             GateOne.Net.addAction('terminal:sshjs_delete_identity_complete', GateOne.SSH.deleteCompleteAction);
             GateOne.Net.addAction('terminal:sshjs_cmd_output', GateOne.SSH.commandCompleted);
             GateOne.Net.addAction('terminal:sshjs_ask_passphrase', GateOne.SSH.enterPassphraseAction);
+            GateOne.Net.addAction('terminal:sshjs_known_hosts', GateOne.SSH.handleKnownHosts);
             GateOne.Events.on("terminal:new_terminal", GateOne.SSH.getConnectString);
         */
         var prefsPanel = u.getNode('#'+prefix+'panel_prefs'),
@@ -46,9 +47,9 @@ go.Base.update(go.SSH, {
             h3 = u.createElement('h3'),
             sshQueryString = u.getQueryVariable('ssh'),
             sshOnce = u.getQueryVariable('ssh_once'),
-            infoPanelDuplicateSession = u.createElement('button', {'id': 'duplicate_session', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            infoPanelManageIdentities = u.createElement('button', {'id': 'manage_identities', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            prefsPanelKnownHosts = u.createElement('button', {'id': 'edit_kh', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
+            infoPanelDuplicateSession = u.createElement('button', {'id': 'duplicate_session', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            infoPanelManageIdentities = u.createElement('button', {'id': 'manage_identities', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            prefsPanelKnownHosts = u.createElement('button', {'id': 'edit_kh', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
             handleQueryString = function(str) {
                 var termNum;
                 // Perform a bit of validation so someone can't be tricked into going to a malicious URL
@@ -58,7 +59,7 @@ go.Base.update(go.SSH, {
                             // Wrap in a short timeout to give the server/client time to establish a new terminal connection
                             setTimeout(function() {
                                 // This ensures that we only send this string if it's a new terminal
-                                if (go.Terminal.terminals[term]['title'] == 'SSH Connect') {
+                                if (go.Terminal.terminals[term]['title'] == gettext('SSH Connect')) {
                                     go.Terminal.sendString(str + '\n', term);
                                 }
                             }, 500);
@@ -73,26 +74,27 @@ go.Base.update(go.SSH, {
                             termNum = go.Terminal.newTerminal();
                         }
                     } else {
-                        logError("SSH Plugin:  ssh query string must start with ssh:// or telnet:// (e.g. ssh=ssh://)");
+                        logError(gettext("SSH Plugin:  ssh query string must start with ssh:// or telnet:// (e.g. ssh=ssh://)"));
                     }
                 } else {
-                    logError("Bad characters in ssh query string: " + str.match(/[\$\n\!\;&` |<>]/));
+                    logError(gettext("Bad characters in ssh query string: ") + str.match(/[\$\n\!\;&` |<>]/));
                 }
             };
-        prefsPanelKnownHosts.innerHTML = "Edit Known Hosts";
+        prefsPanelKnownHosts.innerHTML = gettext("Edit Known Hosts");
         prefsPanelKnownHosts.onclick = function() {
-            u.xhrGet(go.prefs.url+'ssh?known_hosts=True', go.SSH.updateKH);
+            // Ask the server to send us the known_hosts file:
+            go.ws.send(JSON.stringify({"terminal:ssh_get_known_hosts": null}));
         }
-        infoPanelManageIdentities.innerHTML = "Manage Identities";
+        infoPanelManageIdentities.innerHTML = gettext("Manage Identities");
         infoPanelManageIdentities.onclick = function() {
             go.SSH.loadIDs();
         }
-        infoPanelDuplicateSession.innerHTML = "Duplicate Session";
+        infoPanelDuplicateSession.innerHTML = gettext("Duplicate Session");
         infoPanelDuplicateSession.onclick = function() {
             var term = localStorage[prefix+'selectedTerminal'];
             go.SSH.duplicateSession(term);
         }
-        h3.innerHTML = "SSH Plugin";
+        h3.innerHTML = gettext("SSH Plugin");
         if (infoPanel) {// Only add to the prefs panel if it actually exists (i.e. not in embedded mode) = u.getNode('#'+prefix+'panel_prefs'),
             infoPanel.appendChild(h3);
             infoPanel.appendChild(infoPanelDuplicateSession);
@@ -134,12 +136,13 @@ go.Base.update(go.SSH, {
         go.Net.addAction('terminal:sshjs_delete_identity_complete', go.SSH.deleteCompleteAction);
         go.Net.addAction('terminal:sshjs_cmd_output', go.SSH.commandCompleted);
         go.Net.addAction('terminal:sshjs_ask_passphrase', go.SSH.enterPassphraseAction);
+        go.Net.addAction('terminal:sshjs_known_hosts', go.SSH.handleKnownHosts);
         if (!go.prefs.broadcastTerminal) {
             E.on("terminal:new_terminal", go.SSH.autoConnect);
             E.on("terminal:new_terminal", go.SSH.getConnectString);
         }
         if (!go.prefs.embedded) {
-            go.Input.registerShortcut('KEY_D', {'modifiers': {'ctrl': true, 'alt': true, 'meta': false, 'shift': false}, 'action': 'GateOne.SSH.duplicateSession(localStorage[GateOne.prefs.prefix+"selectedTerminal"])'});
+            E.on("terminal:keydown:ctrl-alt-d", function() { go.SSH.duplicateSession(localStorage[prefix+"selectedTerminal"]); });
         }
     },
     postInit: function() {
@@ -172,7 +175,7 @@ go.Base.update(go.SSH, {
         */
         logDebug("GateOne.SSH.connect: " + URL);
         var term = localStorage[prefix+'selectedTerminal'],
-            unconnectedTermTitle = 'SSH Connect', // NOTE: This MUST be equal to the title set by ssh_connect.py or it will send the ssh:// URL to the active terminal
+            unconnectedTermTitle = gettext('SSH Connect'), // NOTE: This MUST be equal to the title set by ssh_connect.py or it will send the ssh:// URL to the active terminal
             openNewTerminal = function() {
                 E.once("terminal:new_terminal", u.partial(t.sendString, URL+'\n'));
                 t.newTerminal(); // This will automatically open a new workspace
@@ -228,7 +231,7 @@ go.Base.update(go.SSH, {
             certSpan = u.createElement('span', {'id': 'ssh_id_certspan', 'class':'✈table_cell ✈table_header_cell'}),
             sortOrder = u.createElement('span', {'id': 'ssh_ids_sort_order', 'style': {'float': 'right', 'margin-left': '.3em', 'margin-top': '-.2em'}}),
             sshIDMetadataDiv = u.createElement('div', {'id': 'ssh_id_metadata', 'class': '✈sectrans ✈ssh_id_metadata'});
-        sshIDHeaderH2.innerHTML = 'SSH Identity Manager: Loading...';
+        sshIDHeaderH2.innerHTML = gettext('SSH Identity Manager: Loading...');
         panelClose.innerHTML = go.Icons['panelclose'];
         panelClose.onclick = function(e) {
             v.togglePanel('#'+prefix+'panel_ssh_ids'); // Scale away, scale away, scale away.
@@ -236,12 +239,12 @@ go.Base.update(go.SSH, {
         sshIDHeader.appendChild(sshIDHeaderH2);
         sshIDHeader.appendChild(panelClose);
         sshIDHeader.appendChild(sshIDHRFix); // The HR here fixes an odd rendering bug with Chrome on Mac OS X
-        sshNewID.innerHTML = "+ New Identity";
+        sshNewID.innerHTML = gettext("+ New Identity");
         sshNewID.onclick = function(e) {
             // Show the new identity dialog/form
             ssh.newIDForm();
         }
-        sshUploadID.innerHTML = "+ Upload";
+        sshUploadID.innerHTML = gettext("+ Upload");
         sshUploadID.onclick = function(e) {
             // Show the upload identity dialog/form
             ssh.uploadIDForm();
@@ -344,18 +347,18 @@ go.Base.update(go.SSH, {
             this.appendChild(order);
             ssh.loadIDs();
         }
-        defaultSpan.innerHTML = "Default"
-        defaultSpan.title = "This field indicates whether or not this identity should be used by default for all connections.  NOTE: If an identity isn't set as default it can still be used for individual servers by using bookmarks or passing it as a query string parameter to the ssh:// URL when opening a new terminal.  For example:  ssh://user@host:22/?identity=*name*";
-        nameSpan.innerHTML = "Name";
-        nameSpan.title = "The *name* of this identity.  NOTE: The name represented here actually encompasses two or three files:  '*name*', '*name*.pub', and if there's an associated X.509 certificate, '*name*-cert.pub'.";
-        bitsSpan.innerHTML = "Bits";
-        bitsSpan.title = "The cryptographic key size.  NOTE:  RSA keys can have a value from 768 to 4096 (with 2048 being the most common), DSA keys must have a value of 1024, and ECDSA (that is, Elliptic Curve DSA) keys must be one of 256, 384, or 521 (that's not a typo: five hundred twenty one)";
-        keytypeSpan.innerHTML = "Keytype";
-        keytypeSpan.title = "Indicates the type of key used by this identity.  One of RSA, DSA, or ECDSA.";
-        certSpan.innerHTML = "Cert";
-        certSpan.title = "This field indicates whether or not there's an X.509 certificate associated with this identity (i.e. a '*name*-cert.pub' file).  X.509 certificates (for use with SSH) are created by signing a public key using a Certificate Authority (CA).  NOTE: In order to use X.509 certificates for authentication with SSH the servers you're connecting to must be configured to trust keys signed by a given CA.";
-        commentSpan.innerHTML = "Comment";
-        commentSpan.title = "This field will contain the comment from the identity's public key.  It comes after the key itself inside its .pub file and if the key was generated by OpenSSH it will typically be something like, 'user@host'.";
+        defaultSpan.innerHTML = gettext("Default");
+        defaultSpan.title = gettext("This field indicates whether or not this identity should be used by default for all connections.  NOTE: If an identity isn't set as default it can still be used for individual servers by using bookmarks or passing it as a query string parameter to the ssh:// URL when opening a new terminal.  For example:  ssh://user@host:22/?identity=*name*");
+        nameSpan.innerHTML = gettext("Name");
+        nameSpan.title = gettext("The *name* of this identity.  NOTE: The name represented here actually encompasses two or three files:  '*name*', '*name*.pub', and if there's an associated X.509 certificate, '*name*-cert.pub'.");
+        bitsSpan.innerHTML = gettext("Bits");
+        bitsSpan.title = gettext("The cryptographic key size.  NOTE:  RSA keys can have a value from 768 to 4096 (with 2048 being the most common), DSA keys must have a value of 1024, and ECDSA (that is, Elliptic Curve DSA) keys must be one of 256, 384, or 521 (that's not a typo: five hundred twenty one)");
+        keytypeSpan.innerHTML = gettext("Keytype");
+        keytypeSpan.title = gettext("Indicates the type of key used by this identity.  One of RSA, DSA, or ECDSA.");
+        certSpan.innerHTML = gettext("Cert");
+        certSpan.title = gettext("This field indicates whether or not there's an X.509 certificate associated with this identity (i.e. a '*name*-cert.pub' file).  X.509 certificates (for use with SSH) are created by signing a public key using a Certificate Authority (CA).  NOTE: In order to use X.509 certificates for authentication with SSH the servers you're connecting to must be configured to trust keys signed by a given CA.");
+        commentSpan.innerHTML = gettext("Comment");
+        commentSpan.title = gettext("This field will contain the comment from the identity's public key.  It comes after the key itself inside its .pub file and if the key was generated by OpenSSH it will typically be something like, 'user@host'.");
         if (localStorage[prefix+'ssh_ids_sort'] == 'alpha') {
             nameSpan.className = '✈table_cell ✈table_header_cell ✈active';
             nameSpan.appendChild(sortOrder);
@@ -437,7 +440,7 @@ go.Base.update(go.SSH, {
         while (sshIDMetadataDiv.childNodes.length >= 1 ) {
             sshIDMetadataDiv.removeChild(sshIDMetadataDiv.firstChild);
         }
-        sshIDMetadataDiv.innerHTML = '<p id="' + prefix + 'ssh_id_tip"><i><b>Tip:</b> Click on an identity to see its information.</i></p>';
+        sshIDMetadataDiv.innerHTML = '<p id="' + prefix + 'ssh_id_tip"><i><b>' + gettext('Tip:') + '</b> ' + gettext('Click on an identity to see its information.') + '</i></p>';
         setTimeout(function() {
             v.applyTransform(sshIDMetadataDiv, '');
             setTimeout(function() {
@@ -458,7 +461,7 @@ go.Base.update(go.SSH, {
             ssh.delay += 50;
         });
         ssh.delay = 500;
-        sshIDHeaderH2.innerHTML = "SSH Identity Manager";
+        sshIDHeaderH2.innerHTML = gettext("SSH Identity Manager");
     },
     displayMetadata: function(identity) {
         /**:GateOne.SSH.displayMetadata(identity)
@@ -466,11 +469,11 @@ go.Base.update(go.SSH, {
         Displays the information about the given *identity* (its name) in the SSH identities metadata area (on the right).  Also displays the buttons that allow the user to delete the identity or upload a certificate.
         */
         var ssh = go.SSH,
-            downloadButton = u.createElement('button', {'id': 'ssh_id_download', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            deleteIDButton = u.createElement('button', {'id': 'ssh_id_delete', 'class': '✈ssh_id_delete ✈button ✈black', 'type': 'submit', 'value': 'Submit'}),
-            uploadCertificateButton = u.createElement('button', {'id': 'ssh_id_upload_cert', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
+            downloadButton = u.createElement('button', {'id': 'ssh_id_download', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            deleteIDButton = u.createElement('button', {'id': 'ssh_id_delete', 'class': '✈ssh_id_delete ✈button ✈black', 'type': 'submit', 'value': gettext('Submit')}),
+            uploadCertificateButton = u.createElement('button', {'id': 'ssh_id_upload_cert', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
             sshIDMetadataDiv = u.getNode('#'+prefix+'ssh_id_metadata'),
-            IDObj = null,
+            IDObj, metadataNames = {},
             confirmDeletion = function(e) {
                 go.ws.send(JSON.stringify({'terminal:ssh_delete_identity': IDObj['name']}));
             };
@@ -484,36 +487,34 @@ go.Base.update(go.SSH, {
             // Not found, nothing to display
             return;
         }
-        downloadButton.innerHTML = "Download";
+        downloadButton.innerHTML = gettext("Download");
         downloadButton.onclick = function(e) {
             go.ws.send(JSON.stringify({'terminal:ssh_get_private_key': IDObj['name']}));
             go.ws.send(JSON.stringify({'terminal:ssh_get_public_key': IDObj['name']}));
-        }
-        deleteIDButton.innerHTML = "Delete " + IDObj['name'];
-        deleteIDButton.title = "Delete this identity";
+        };
+        deleteIDButton.innerHTML = gettext("Delete ") + IDObj['name'];
+        deleteIDButton.title = gettext("Delete this identity");
         deleteIDButton.onclick = function(e) {
-            v.confirm('Delete identity ' + IDObj['name'] + '?', gettext("Are you sure you wish to delete this identity?"), confirmDeletion);
-        }
+            v.confirm(gettext('Delete identity ') + IDObj['name'] + '?', gettext("Are you sure you wish to delete this identity?"), confirmDeletion);
+        };
         uploadCertificateButton.title = gettext("An X.509 certificate may be uploaded to add to this identity.  If one already exists, the existing certificate will be overwritten.");
         uploadCertificateButton.onclick = function(e) {
             ssh.uploadCertificateForm(identity);
-        }
-        var metadataNames = {
-            'Identity Name': IDObj['name'],
-            'Keytype': IDObj['keytype'],
-            'Bits': IDObj['bits'],
-            'Fingerprint': IDObj['fingerprint'],
-            'Comment': IDObj['comment'],
-            'Bubble Babble': IDObj['bubblebabble'],
         };
+        metadataNames[gettext('Identity Name')] = IDObj.name;
+        metadataNames[gettext('Keytype')] = IDObj.keytype;
+        metadataNames[gettext('Bits')] = IDObj.bits;
+        metadataNames[gettext('Fingerprint')] = IDObj.fingerprint;
+        metadataNames[gettext('Comment')] = IDObj.comment;
+        metadataNames['Bubble Babble'] = IDObj.bubblebabble;
         if (IDObj['certinfo']) {
             // Only display cert info if there's actually cert info to display
-            metadataNames['Certificate Info'] = IDObj['certinfo'];
-            uploadCertificateButton.innerHTML = "Replace Certificate";
+            metadataNames[gettext('Certificate Info')] = IDObj['certinfo'];
+            uploadCertificateButton.innerHTML = gettext("Replace Certificate");
         } else {
             // Only display randomart if there's no cert info because otherwise it takes up too much space
             metadataNames['Randomart'] = IDObj['randomart'];
-            uploadCertificateButton.innerHTML = "Upload Certificate";
+            uploadCertificateButton.innerHTML = gettext("Upload Certificate");
         }
         // Remove existing content first
         while (sshIDMetadataDiv.childNodes.length >= 1 ) {
@@ -521,7 +522,7 @@ go.Base.update(go.SSH, {
         }
         var actionsrow = u.createElement('div', {'class': '✈metadata_row'}),
             actionstitle = u.createElement('div', {'class':'✈ssh_id_metadata_title'});
-        actionstitle.innerHTML = 'Actions';
+        actionstitle.innerHTML = gettext('Actions');
         actionsrow.appendChild(actionstitle);
         actionsrow.appendChild(downloadButton);
         actionsrow.appendChild(deleteIDButton);
@@ -530,9 +531,9 @@ go.Base.update(go.SSH, {
         var pubkeyrow = u.createElement('div', {'class': '✈metadata_row'}),
             pubkeytitle = u.createElement('div', {'class':'✈ssh_id_metadata_title'}),
             pubkeyvalue = u.createElement('textarea', {'class':'✈ssh_id_pubkey_value'});
-        pubkeytitle.innerHTML = 'Public Key';
+        pubkeytitle.innerHTML = gettext('Public Key');
         pubkeyvalue.innerHTML = IDObj['public'];
-        pubkeyvalue.title = "Click me to select all";
+        pubkeyvalue.title = gettext("Click me to select all");
         pubkeyvalue.onclick = function(e) {
             // Select all in the textarea when it is clicked
             this.focus();
@@ -571,7 +572,7 @@ go.Base.update(go.SSH, {
             certSpan = u.createElement('span', {'class':'✈table_cell'}),
             bitsSpan = u.createElement('span', {'class':'✈table_cell'}),
             commentSpan = u.createElement('span', {'class':'✈table_cell'}),
-            isCertificate = "No";
+            isCertificate = gettext("No");
         defaultCheckbox.checked = IDObj['default'];
         defaultCheckbox.onchange = function(e) {
             // Post the update to the server
@@ -590,7 +591,7 @@ go.Base.update(go.SSH, {
         commentSpan.innerHTML = IDObj['comment'];
         bitsSpan.innerHTML = IDObj['bits'];
         if (IDObj['certinfo'].length) {
-            isCertificate = "Yes";
+            isCertificate = gettext("Yes");
         }
         certSpan.innerHTML = isCertificate;
         elem.appendChild(defaultSpan);
@@ -607,7 +608,7 @@ go.Base.update(go.SSH, {
             });
             this.className = '✈halfsectrans ✈ssh_id ✈active';
             ssh.displayMetadata(objName);
-        }
+        };
         elem.style.opacity = 0;
         v.applyTransform(elem, 'translateX(-300%)');
         setTimeout(function() {
@@ -673,7 +674,7 @@ go.Base.update(go.SSH, {
             goDiv = u.getNode(go.prefs.goDiv),
             sshIDPanel = u.getNode('#'+prefix+'panel_ssh_ids'),
             identityForm = u.createElement('form', {'name': prefix+'ssh_id_form', 'class': '✈ssh_id_form'}),
-            nameInput = u.createElement('input', {'type': 'text', 'id': 'ssh_new_id_name', 'name': prefix+'ssh_new_id_name', 'placeholder': '<letters, numbers, underscore>', 'tabindex': 1, 'required': 'required', 'pattern': '[A-Za-z0-9_]+'}),
+            nameInput = u.createElement('input', {'type': 'text', 'id': 'ssh_new_id_name', 'name': prefix+'ssh_new_id_name', 'placeholder': gettext('<letters, numbers, underscore>'), 'tabindex': 1, 'required': 'required', 'pattern': '[A-Za-z0-9_]+'}),
             nameLabel = u.createElement('label'),
             keyBitsRow = u.createElement('div', {'class': '✈ssh_keybits_row'}),
             keytypeLabel = u.createElement('label'),
@@ -693,19 +694,19 @@ go.Base.update(go.SSH, {
             ecdsaBits = [bits256, bits384, bits521],
             dsaBits = [bits1024],
             rsaBits = [bits768, bits1024, bits2048, bits4096],
-            passphraseInput = u.createElement('input', {'type': 'password', 'id': 'ssh_new_id_passphrase', 'name': prefix+'ssh_new_id_passphrase', 'class': '✈ssh_new_id_passphrase', 'placeholder': '<Optional>', 'pattern': '.{4}.+'}), // That pattern means > 4 characters
-            verifyPassphraseInput = u.createElement('input', {'type': 'password', 'id': 'ssh_new_id_passphrase_verify', 'name': prefix+'ssh_new_id_passphrase_verify', 'placeholder': '<Optional>', 'pattern': '.{4}.+'}),
+            passphraseInput = u.createElement('input', {'type': 'password', 'id': 'ssh_new_id_passphrase', 'name': prefix+'ssh_new_id_passphrase', 'class': '✈ssh_new_id_passphrase', 'placeholder': gettext('<Optional>'), 'pattern': '.{4}.+'}), // That pattern means > 4 characters
+            verifyPassphraseInput = u.createElement('input', {'type': 'password', 'id': 'ssh_new_id_passphrase_verify', 'name': prefix+'ssh_new_id_passphrase_verify', 'placeholder': gettext('<Optional>'), 'pattern': '.{4}.+'}),
             passphraseLabel = u.createElement('label'),
-            commentInput = u.createElement('input', {'type': 'text', 'id': 'ssh_new_id_comment', 'name': prefix+'ssh_new_id_comment', 'placeholder': '<Optional>'}),
+            commentInput = u.createElement('input', {'type': 'text', 'id': 'ssh_new_id_comment', 'name': prefix+'ssh_new_id_comment', 'placeholder': gettext('<Optional>')}),
             commentLabel = u.createElement('label'),
             buttonContainer = u.createElement('div', {'class': '✈centered_buttons'}),
-            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': 'Cancel', 'class': '✈button ✈black'}),
+            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': gettext('Cancel'), 'class': '✈button ✈black'}),
             nameValidate = function(e) {
                 var nameNode = u.getNode('#'+prefix+'ssh_new_id_name'),
                     text = nameNode.value;
                 if (text != text.match(/[A-Za-z0-9_]+/)) {
-                    nameNode.setCustomValidity("Valid characters: Numbers, Letters, Underscores");
+                    nameNode.setCustomValidity(gettext("Valid characters: Numbers, Letters, Underscores"));
                 } else {
                     nameNode.setCustomValidity("");
                 }
@@ -716,19 +717,19 @@ go.Base.update(go.SSH, {
                 if (passphraseNode.value != verifyNode.value) {
                     verifyNode.setCustomValidity("Error: Passwords do not match.");
                 } else if (passphraseNode.value.length < 5) {
-                    verifyNode.setCustomValidity("Error: Must be longer than four characters.");
+                    verifyNode.setCustomValidity(gettext("Error: Must be longer than four characters."));
                 } else {
                     verifyNode.setCustomValidity("");
                 }
             };
-        submit.innerHTML = "Submit";
-        cancel.innerHTML = "Cancel";
-        nameLabel.innerHTML = "Name";
+        submit.innerHTML = gettext("Submit");
+        cancel.innerHTML = gettext("Cancel");
+        nameLabel.innerHTML = gettext("Name");
         nameLabel.htmlFor = prefix+'ssh_new_id_name';
         nameInput.oninput = nameValidate;
         passphraseInput.oninput = passphraseValidate;
         verifyPassphraseInput.oninput = passphraseValidate;
-        keytypeLabel.innerHTML = "Keytype";
+        keytypeLabel.innerHTML = gettext("Keytype");
         keytypeLabel.htmlFor = prefix+'ssh_new_id_keytype';
         rsaType.innerHTML = "RSA";
         dsaType.innerHTML = "DSA";
@@ -769,10 +770,10 @@ go.Base.update(go.SSH, {
                     bitsSelect.appendChild(option);
                 });
             }
-        }
-        passphraseLabel.innerHTML = "Passphrase";
+        };
+        passphraseLabel.innerHTML = gettext("Passphrase");
         passphraseLabel.htmlFor = prefix+'ssh_new_id_passphrase';
-        commentLabel.innerHTML = "Comment";
+        commentLabel.innerHTML = gettext("Comment");
         commentLabel.htmlFor = prefix+'ssh_new_id_comment';
         identityForm.appendChild(nameLabel);
         identityForm.appendChild(nameInput);
@@ -789,7 +790,7 @@ go.Base.update(go.SSH, {
         buttonContainer.appendChild(submit);
         buttonContainer.appendChild(cancel);
         identityForm.appendChild(buttonContainer);
-        var closeDialog = go.Visual.dialog('New SSH Identity', identityForm, {'style': {'width': '20em'}}); // Just an initial width
+        var closeDialog = go.Visual.dialog(gettext('New SSH Identity'), identityForm, {'class': '✈prefsdialog', 'style': {'width': '20em'}}); // Just an initial width
         cancel.onclick = closeDialog;
         setTimeout(function() {
             setTimeout(function() {
@@ -834,16 +835,16 @@ go.Base.update(go.SSH, {
             certificateFileLabel = u.createElement('label'),
             note = u.createElement('p', {'style': {'font-size': '80%', 'margin-top': '1em', 'margin-bottom': '1em'}}),
             buttonContainer = u.createElement('div', {'class': '✈centered_buttons'}),
-            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': 'Cancel', 'class': '✈button ✈black'});
+            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': gettext('Cancel'), 'class': '✈button ✈black'});
         submit.innerHTML = "Submit";
         cancel.innerHTML = "Cancel";
-        note.innerHTML = "<b>NOTE:</b> If a public key is not provided one will be automatically generated using the private key.  You may be asked for the passphrase to perform this operation.";
-        privateKeyFileLabel.innerHTML = "Private Key";
+        note.innerHTML = "<b>" + gettext("NOTE:") + "</b> " + gettext("If a public key is not provided one will be automatically generated using the private key.  You may be asked for the passphrase to perform this operation.");
+        privateKeyFileLabel.innerHTML = gettext("Private Key");
         privateKeyFileLabel.htmlFor = prefix+'ssh_upload_id_privatekey';
-        publicKeyFileLabel.innerHTML = "Optional: Public Key";
+        publicKeyFileLabel.innerHTML = gettext("Optional: Public Key");
         publicKeyFileLabel.htmlFor = prefix+'ssh_upload_id_publickey';
-        certificateFileLabel.innerHTML = "Optional: Certificate";
+        certificateFileLabel.innerHTML = gettext("Optional: Certificate");
         certificateFileLabel.htmlFor = prefix+'ssh_upload_id_cert';
         uploadIDForm.appendChild(privateKeyFileLabel);
         uploadIDForm.appendChild(privateKeyFile);
@@ -855,7 +856,7 @@ go.Base.update(go.SSH, {
         buttonContainer.appendChild(submit);
         buttonContainer.appendChild(cancel);
         uploadIDForm.appendChild(buttonContainer);
-        var closeDialog = go.Visual.dialog('Upload SSH Identity', uploadIDForm, {'style': {'width': '20em'}});
+        var closeDialog = go.Visual.dialog(gettext('Upload SSH Identity'), uploadIDForm, {'class': '✈prefsdialog', 'style': {'width': '20em'}});
         cancel.onclick = closeDialog;
         uploadIDForm.onsubmit = function(e) {
             // Don't actually submit it
@@ -913,9 +914,13 @@ go.Base.update(go.SSH, {
             privateKeyReader.onload = sendPrivateKey;
             privateKeyReader.readAsText(privFile);
             publicKeyReader.onload = sendPublicKey;
-            publicKeyReader.readAsText(pubFile);
+            if (pubFile) {
+                publicKeyReader.readAsText(pubFile);
+            }
             certificateReader.onload = sendCertificate;
-            certificateReader.readAsText(certFile);
+            if (certFile) {
+                certificateReader.readAsText(certFile);
+            }
             closeDialog();
         }
     },
@@ -927,23 +932,24 @@ go.Base.update(go.SSH, {
         *identity* should be the name of the identity associated with this certificate.
         */
         var goDiv = go.node,
+            closeDialog,
             sshIDPanel = u.getNode('#'+prefix+'panel_ssh_ids'),
             uploadCertForm = u.createElement('form', {'name': prefix+'ssh_upload_cert_form', 'class': '✈ssh_id_form ✈centered_text'}),
             certificateFile = u.createElement('input', {'type': 'file', 'id': 'ssh_upload_id_cert', 'name': prefix+'ssh_upload_id_cert'}),
             certificateFileLabel = u.createElement('label'),
             buttonContainer = u.createElement('div', {'class': '✈centered_buttons'}),
-            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': 'Cancel', 'class': '✈button ✈black'});
+            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': gettext('Cancel'), 'class': '✈button ✈black'});
         submit.innerHTML = "Submit";
         cancel.innerHTML = "Cancel";
-        certificateFileLabel.innerHTML = "Optional Certificate";
+        certificateFileLabel.innerHTML = gettext("Optional Certificate");
         certificateFileLabel.htmlFor = prefix+'ssh_upload_id_cert';
         uploadCertForm.appendChild(certificateFileLabel);
         uploadCertForm.appendChild(certificateFile);
         buttonContainer.appendChild(submit);
         buttonContainer.appendChild(cancel);
         uploadCertForm.appendChild(buttonContainer);
-        var closeDialog = go.Visual.dialog('Upload X.509 Certificate', uploadCertForm, {'style': {'width': '20em'}});
+        closeDialog = go.Visual.dialog(gettext('Upload X.509 Certificate'), uploadCertForm, {'class': '✈prefsdialog', 'style': {'width': '20em'}});
         cancel.onclick = closeDialog;
         uploadCertForm.onsubmit = function(e) {
             // Don't actually submit it
@@ -963,7 +969,7 @@ go.Base.update(go.SSH, {
             certificateReader.onload = sendCertificate;
             certificateReader.readAsText(certFile);
             closeDialog();
-        }
+        };
     },
     enterPassphraseAction: function(settings) {
         /**:GateOne.SSH.enterPassphraseAction(settings)
@@ -978,13 +984,13 @@ go.Base.update(go.SSH, {
             explanation = u.createElement('p', {'style': {'margin-top': '0.5em'}}),
             safetyNote = u.createElement('p', {'style': {'font-size': '80%'}}),
             buttonContainer = u.createElement('div', {'class': '✈centered_buttons'}),
-            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': 'Submit', 'class': '✈button ✈black'}),
-            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': 'Cancel', 'class': '✈button ✈black'});
+            submit = u.createElement('button', {'id': 'submit', 'type': 'submit', 'value': gettext('Submit'), 'class': '✈button ✈black'}),
+            cancel = u.createElement('button', {'id': 'cancel', 'type': 'reset', 'value': gettext('Cancel'), 'class': '✈button ✈black'});
         submit.innerHTML = "Submit";
         cancel.innerHTML = "Cancel";
         passphrase.autofocus = "autofocus";
         explanation.innerHTML = gettext("The private key for this SSH identity is protected by a passphrase.  Please enter the passphrase so a public key can be generated.");
-        safetyNote.innerHTML = gettext("<b>NOTE:</b> This passphrase will only be used to extract the public key and will not be stored.");
+        safetyNote.innerHTML = "<b>" + gettext("NOTE:") + "</b> " + gettext("This passphrase will only be used to extract the public key and will not be stored.");
         passphraseLabel.innerHTML = gettext("Passphrase");
         passphraseLabel.htmlFor = prefix+'ssh_passphrase';
         passphraseForm.appendChild(explanation);
@@ -994,12 +1000,12 @@ go.Base.update(go.SSH, {
         buttonContainer.appendChild(submit);
         buttonContainer.appendChild(cancel);
         passphraseForm.appendChild(buttonContainer);
-        var closeDialog = go.Visual.dialog('Passphrase for "' + settings['name'] + '"', passphraseForm, {'style': {'width': '23em'}});
+        var closeDialog = go.Visual.dialog(gettext('Passphrase for') + '"' + settings['name'] + '"', passphraseForm, {'class': '✈prefsdialog', 'style': {'width': '23em'}});
         // TODO: Make it so that the identity in question gets deleted if the user cancels out trying to enter the correct passphrase
         // TODO: Alternatively, hang on to the identity but provide a button to re-try the passphrase (will require some server-side detection too I think)
         if (settings['bad']) {
             delete settings['bad'];
-            explanation.innerHTML = "<span style='color: red;'>Invalid passphrase.</span>  Please try again.";
+            explanation.innerHTML = "<span style='color: red;'>" + gettext("Invalid passphrase.") + "</span> " + gettext("Please try again.");
         }
         cancel.onclick = closeDialog;
         passphraseForm.onsubmit = function(e) {
@@ -1061,7 +1067,7 @@ go.Base.update(go.SSH, {
         */
         var ssh = go.SSH;
         if (message['result'] == 'Success') {
-            v.displayMessage('Keypair generation complete.');
+            v.displayMessage(gettext('Keypair generation complete.'));
         } else {
             v.displayMessage(message['result']);
         }
@@ -1074,7 +1080,7 @@ go.Base.update(go.SSH, {
         */
         var ssh = go.SSH;
         if (message['result'] == 'Success') {
-            v.displayMessage('Identity saved successfully.');
+            v.displayMessage(gettext('Identity saved successfully.'));
         } else {
             v.displayMessage(message['result']);
         }
@@ -1099,17 +1105,23 @@ go.Base.update(go.SSH, {
         }
         go.Terminal.newTerminal();
     },
-    updateKH: function(known_hosts) {
-        /**:GateOne.SSH.updateKH(known_hosts)
+    handleKnownHosts: function(message) {
+        /**:GateOne.SSH.handleKnownHosts(message)
 
-        Updates the sshKHTextArea with the given *known_hosts* file.
-
-        .. note:: Meant to be used as a callback function passed to :js:meth:`GateOne.Utils.xhrGet`.
+        Updates the sshKHTextArea with the contents of *message['known_hosts']*.
         */
-        var sshKHTextArea = u.getNode('#'+prefix+'ssh_kh_textarea');
-        sshKHTextArea.value = known_hosts;
+        var sshKHTextArea = u.getNode('#'+prefix+'ssh_kh_textarea'),
+            storeEditor = function(cm) {
+                // Stores the instance of CodeMirror as GateOne.SSH.khEditor
+                go.SSH.khEditor = cm;
+            },
+            enableEditor = function() {
+                // Add the Editor so we get line numbers
+                go.Editor.fromTextArea(u.getNode("#go_default_ssh_kh_textarea"), {lineNumbers: true, lineWrapping: true, tabindex: 1, autofocus: true}, storeEditor);
+            };
+        sshKHTextArea.value = message.known_hosts;
         // Now show the panel
-        v.togglePanel('#'+prefix+'panel_known_hosts');
+        v.togglePanel('#'+prefix+'panel_known_hosts', enableEditor);
     },
     createKHPanel: function() {
         /**:GateOne.SSH.createKHPanel()
@@ -1119,7 +1131,7 @@ go.Base.update(go.SSH, {
         If the panel already exists its contents will be destroyed and re-created.
         */
         var existingPanel = u.getNode('#'+prefix+'panel_known_hosts'),
-            sshPanel = u.createElement('div', {'id': 'panel_known_hosts', 'class': '✈panel ✈sectrans'}),
+            sshPanel = u.createElement('div', {'id': 'panel_known_hosts', 'class': '✈panel ✈sectrans ✈panel_known_hosts'}),
             sshHeader = u.createElement('div', {'id': 'ssh_header', 'class': '✈sectrans'}),
             sshHRFix = u.createElement('hr', {'style': {'opacity': 0}}),
             sshKHTextArea = u.createElement('textarea', {'id': 'ssh_kh_textarea', 'rows': 30, 'cols': 100}),
@@ -1129,48 +1141,29 @@ go.Base.update(go.SSH, {
                 'method': 'post',
                 'action': go.prefs.url+'ssh?known_hosts=True'
             });
-        sshHeader.innerHTML = '<h2>SSH Plugin: Edit Known Hosts</h2>';
+        sshHeader.innerHTML = '<h2>' + gettext('SSH Plugin: Edit Known Hosts') + '</h2>';
         sshHeader.appendChild(sshHRFix); // The HR here fixes an odd rendering bug with Chrome on Mac OS X
-        save.innerHTML = "Save";
-        cancel.innerHTML = "Cancel";
+        save.innerHTML = gettext("Save");
+        cancel.innerHTML = gettext("Cancel");
         cancel.onclick = function(e) {
             e.preventDefault(); // Don't submit the form
             v.togglePanel('#'+prefix+'panel_known_hosts'); // Hide the panel
         }
         sshKHTextArea.onfocus = function(e) {
             sshKHTextArea.focus();
-//             go.Input.disableCapture(); // So users can paste into it
             go.Terminal.Input.disableCapture();
         }
         sshKHTextArea.onblur = function(e) {
-//             go.Input.capture(); // Go back to normal
             go.Terminal.Input.capture();
         }
         form.onsubmit = function(e) {
             // Submit the modified known_hosts file to the server and notify when complete
             e.preventDefault(); // Don't actually submit
-            var kh = u.getNode('#'+prefix+'ssh_kh_textarea').value,
-                xhr = new XMLHttpRequest(),
-                handleStateChange = function(e) {
-                    var status = null;
-                    try {
-                        status = parseInt(e.target.status);
-                    } catch(e) {
-                        return;
-                    }
-                    if (e.target.readyState == 4 && status == 200 && e.target.responseText) {
-                        v.displayMessage("SSH Plugin: known_hosts saved.");
-                        // Hide the panel
-                        v.togglePanel('#'+prefix+'panel_known_hosts');
-                    }
-                };
-            if (xhr.addEventListener) {
-                xhr.addEventListener('readystatechange', handleStateChange, false);
-            } else {
-                xhr.onreadystatechange = handleStateChange;
-            }
-            xhr.open('POST', go.prefs.url+'ssh?known_hosts=True', true);
-            xhr.send(kh);
+            var kh = GateOne.SSH.khEditor.getValue();
+            go.ws.send(JSON.stringify({'terminal:ssh_save_known_hosts': kh}));
+            v.displayMessage(gettext("SSH Plugin: known_hosts saved."));
+            // Hide the panel
+            v.togglePanel('#'+prefix+'panel_known_hosts');
         }
         form.appendChild(sshHeader);
         form.appendChild(sshKHTextArea);
@@ -1178,17 +1171,12 @@ go.Base.update(go.SSH, {
         form.appendChild(save);
         form.appendChild(cancel);
         if (existingPanel) {
-            // Remove everything first
-            while (existingPanel.childNodes.length >= 1 ) {
-                existingPanel.removeChild(existingPanel.firstChild);
-            }
-            sshHeader.style.opacity = 0;
-            existingPanel.appendChild(form);
-        } else {
-            sshPanel.appendChild(form);
-            u.hideElement(sshPanel);
-            u.getNode(go.prefs.goDiv).appendChild(sshPanel);
+            // Remove everything
+            u.removeElement(existingPanel);
         }
+        sshPanel.appendChild(form);
+        u.hideElement(sshPanel);
+        u.getNode(go.prefs.goDiv).appendChild(sshPanel);
     },
     displayHostFingerprint: function(message) {
         /**:GateOne.SSH.displayHostFingerprint(message)
@@ -1198,25 +1186,35 @@ go.Base.update(go.SSH, {
         The fingerprint will be colorized using the hex values of the fingerprint as the color code with the last value highlighted in bold.
         */
         // Example message: {"sshjs_display_fingerprint": {"result": "Success", "fingerprint": "cc:2f:b9:4f:f6:c0:e5:1d:1b:7a:86:7b:ff:86:97:5b"}}
+        console.log('message:', message);
         if (message['result'] == 'Success') {
             var fingerprint = message['fingerprint'],
                 hexes = fingerprint.split(':'),
                 text = '',
                 colorized = '',
-                count = 0;
-            colorized += '<span style="color: #';
-            hexes.forEach(function(hex) {
-                if (count == 3 || count == 6 || count == 9 || count == 12) {
-                    colorized += '">' + text + '</span><span style="color: #' + hex;
-                    text = hex;
-                } else if (count == 15) {
-                    colorized += '">' + text + '</span><span style="text-decoration: underline">' + hex + '</span>';
-                } else {
-                    colorized += hex;
-                    text += hex;
-                }
-                count += 1;
-            });
+                count = 0,
+                temp;
+            if (fingerprint.indexOf('ECDSA') == -1) { // Old fashioned fingerprint
+                colorized += '<span style="color: #';
+                hexes.forEach(function(hex) {
+                    if (count == 3 || count == 6 || count == 9 || count == 12) {
+                        colorized += '">' + text + '</span><span style="color: #' + hex;
+                        text = hex;
+                    } else if (count == 15) {
+                        colorized += '">' + text + '</span><span style="text-decoration: underline">' + hex + '</span>';
+                    } else {
+                        colorized += hex;
+                        text += hex;
+                    }
+                    count += 1;
+                });
+            } else {
+                temp = fingerprint.split(':')[1]; // Just the fingerprint part
+                colorized = fingerprint.split(':')[0] + ':<br>' + temp.substring(0, temp.length - 8); // All but the last 8 chars which we'll highlight
+                colorized += '<span style="color: #0ACD24">'; // A nice bright green for the last few bits
+                colorized += temp.substr(temp.length - 8);
+                colorized += '</span>';
+            }
             v.displayMessage('<i>' + message['host'] + '</i>: ' + colorized);
         }
     },
@@ -1247,7 +1245,7 @@ go.Base.update(go.SSH, {
             output = message['output'],
             result = message['result'];
         if (result != 'Success') {
-            v.displayMessage("Error executing background command, '" + cmd + "' on terminal " + term + ": " + result);
+            v.displayMessage(gettext("Error executing background command, ") + "'" + cmd + "' " + gettext("on terminal ") + term + ": " + result);
             if (go.SSH.remoteCmdErrorbacks[term][cmd]) {
                 go.SSH.remoteCmdErrorbacks[term][cmd](result);
                 delete go.SSH.remoteCmdErrorbacks[term][cmd];
@@ -1258,7 +1256,7 @@ go.Base.update(go.SSH, {
             go.SSH.remoteCmdCallbacks[term][cmd](output);
             delete go.SSH.remoteCmdCallbacks[term][cmd];
         } else { // If you don't have an associated callback it will display and log the output:  VERY useful in debugging!
-            v.displayMessage("Remote command output from terminal " + term + ": " + output);
+            v.displayMessage(gettext("Remote command output from terminal ") + term + ": " + output);
         }
     },
     execRemoteCmd: function(term, command, callback, errorback) {
@@ -1282,7 +1280,7 @@ go.Base.update(go.SSH, {
         // Set the errorback for *term*
         ssh.remoteCmdErrorbacks[term][command] = errorback;
         if (go.ws.readyState != 1) {
-            ssh.commandCompleted({'term': term, 'cmd': command, 'result': 'WebSocket is disconnected.'});
+            ssh.commandCompleted({'term': term, 'cmd': command, 'result': gettext('WebSocket is disconnected.')});
         } else {
             go.ws.send(JSON.stringify({'terminal:ssh_execute_command': {'term': term, 'cmd': command}}));
         }

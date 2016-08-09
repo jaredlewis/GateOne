@@ -152,6 +152,7 @@ from array import array
 from datetime import datetime, timedelta
 from functools import partial
 from collections import defaultdict
+from itertools import imap, izip
 try:
     from collections import OrderedDict
 except ImportError: # Python <2.7 didn't have OrderedDict in collections
@@ -164,7 +165,18 @@ except ImportError: # Python <2.7 didn't have OrderedDict in collections
         logging.error(
             "...or download it from http://pypi.python.org/pypi/ordereddict")
         sys.exit(1)
-from itertools import imap, izip
+try:
+    xrange = xrange
+except NameError:  # Python 3 doesn't have xrange()
+    xrange = range
+try:
+    unichr = unichr
+except NameError:  # Python 3 doesn't have unichr()
+    unichr = chr
+try:
+    basestring = basestring
+except NameError:  # Python 3 doesn't have basestring
+    basestring = (str, bytes)
 
 # Inernationalization support
 _ = str # So pyflakes doesn't complain
@@ -593,7 +605,10 @@ def pua_counter():
     successive call.  If this is a narrow Python build the tail end of Plane 15
     will be used as a fallback (with a lot less characters).
 
-    .. note:: Meant to be used as references to non-text objects in the screen array() (since it can only contain unicode characters)
+    .. note::
+
+        Meant to be used as references to non-text objects in the screen array()
+        (since it can only contain unicode characters)
     """
     if SPECIAL == 1048576: # Not a narrow build of Python
         n = SPECIAL # U+100000 or unichr(SPECIAL) (start of Plane 16)
@@ -1746,7 +1761,7 @@ class Terminal(object):
         }
     }
 
-    RE_CSI_ESC_SEQ = re.compile(r'\x1B\[([?A-Za-z0-9>;@:\!]*)([A-Za-z@_])')
+    RE_CSI_ESC_SEQ = re.compile(r'\x1B\[([?A-Za-z0-9>;@:\!]*?)([A-Za-z@_])')
     RE_ESC_SEQ = re.compile(
         r'\x1b(.*\x1b\\|[ABCDEFGHIJKLMNOQRSTUVWXYZa-z0-9=<>]|[()# %*+].)')
     RE_TITLE_SEQ = re.compile(r'\x1b\][0-2]\;(.*?)(\x07|\x1b\\)')
@@ -2811,7 +2826,7 @@ class Terminal(object):
                         else:
                             logging.warning(_(
                                 "Warning: No ESC sequence handler for %s"
-                                % `self.esc_buffer`
+                                % repr(self.esc_buffer)
                             ))
                             self.esc_buffer = ''
                     continue # We're done here
@@ -3697,7 +3712,10 @@ class Terminal(object):
 
             :coordinates: Should be something like, 'row;col' (1-based) but, 'row', 'row;', and ';col' are also valid (assumes 1 on missing value).
 
-        .. note:: If coordinates is '' (an empty string), the cursor will be moved to the top left (1;1).
+        .. note::
+
+            If coordinates is '' (an empty string), the cursor will be moved to
+            the top left (1;1).
         """
         # NOTE: Since this is 1-based we have to subtract 1 from everything to
         #       match how we store these values internally.

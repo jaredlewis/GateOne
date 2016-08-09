@@ -18,8 +18,6 @@ from gateone.core.locale import get_translation
 from gateone.core.log import go_logger
 from gateone.auth.authorization import applicable_policies
 
-term_log = go_logger("gateone.terminal")
-
 # Localization support
 _ = get_translation()
 
@@ -187,6 +185,8 @@ def policy_char_handler(cls, policy):
             term = cls.f_kwargs['term']
         except KeyError:
             # No 'term' was given at all.  Use current_term
+            if not hasattr(instance, 'current_term'):
+                return False
             term = instance.current_term
     # Make sure the term is an int
     term = int(term)
@@ -246,7 +246,6 @@ def terminal_policies(cls):
         'resize': policy_write_check_dict,
         'set_term_encoding': policy_write_check_dict,
         'set_term_keyboard_mode': policy_write_check_dict,
-        'swap_terminals': policy_write_check_dict,
         'move_terminal': policy_write_check_dict,
         'kill_terminal': policy_write_check_arg,
         'reset_terminal': policy_write_check_arg,

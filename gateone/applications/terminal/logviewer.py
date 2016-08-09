@@ -225,7 +225,7 @@ def escape_escape_seq(text, preserve_renditions=True, rstrip=True):
     """
     esc_sequence = re.compile(
         r'\x1b(.*\x1b\\|[ABCDEFGHIJKLMNOQRSTUVWXYZa-z0-9=]|[()# %*+].)')
-    csi_sequence = re.compile(r'\x1B\[([?A-Za-z0-9;@:\!]*)([A-Za-z@_])')
+    csi_sequence = re.compile(r'\x1B\[([?A-Za-z0-9;@:\!]*?)([A-Za-z@_])')
     #esc_rstrip = re.compile('[ \t]+\x1b.+$')
     out = u""
     esc_buffer = u""
@@ -314,9 +314,9 @@ def flatten_log(log_path, file_like, preserve_renditions=True, show_esc=False):
         # Convert to datetime object
         frame_time = datetime.fromtimestamp(frame_time/1000)
         if show_esc:
-            frame_time = frame_time.strftime(u'\x1b[0m%b %m %H:%M:%S')
+            frame_time = frame_time.strftime(u'\x1b[0m%b %d %H:%M:%S')
         else: # Renditions preserved == I want pretty.  Make the date bold:
-            frame_time = frame_time.strftime(u'\x1b[0;1m%b %m %H:%M:%S\x1b[m')
+            frame_time = frame_time.strftime(u'\x1b[0;1m%b %d %H:%M:%S\x1b[m')
         if not show_esc:
             term.write(frame[14:])
         if term.capture:
@@ -484,6 +484,8 @@ def render_html_playback(golog_path, render_settings=None):
         :colors:
             (Default: `"default"`) The text color scheme to use when rendering
             the HTML template.
+
+    .. note:: This function returns a byte string (not a unicode string).
     """
     # Get the necessary variables out of render_settings
     if not render_settings:
@@ -495,13 +497,12 @@ def render_html_playback(golog_path, render_settings=None):
     theme = render_settings.get('theme', 'black')
     temploc = tempfile.mkdtemp(prefix='logviewer') # stores rendered CSS
     # This function renders all themes
-    combine_css(os.path.join(
-        temploc, 'gateone.css'), container, log=False)
+    combine_css(os.path.join(temploc, 'gateone.css'), container)
     theme_css_file = "gateone_theme_{theme}.css".format(theme=theme)
     theme_css_path = os.path.join(temploc, theme_css_file)
     with io.open(theme_css_path, mode='r', encoding='utf-8') as f:
         theme_css = f.read()
-    # Cleanup the CSS files since we're now down with them
+    # Cleanup the CSS files since we're now done with them
     shutil.rmtree(temploc)
     # Colors are easiest since they don't need to be rendered
     colors_css_file = "{0}.css".format(colors)
@@ -531,8 +532,8 @@ def render_html_playback(golog_path, render_settings=None):
         preview="false", # Only used by the logging plugin
         recording=json_encode(recording)
     )
-    if not isinstance(playback_html, str):
-        playback_html = playback_html.decode('utf-8')
+    if not isinstance(playback_html, bytes): # It's a Unicode string
+        playback_html = playback_html.encode('utf-8') # Convert to bytes
     return playback_html
 
 def get_terminal_size():
@@ -566,9 +567,11 @@ def main(args=sys.argv):
     """
     Parse command line arguments and view the log in the specified format.
     """
-    usage = ('\t%prog [options] <log file>')
+    cli_command = ""
+    if sys.argv[0].endswith('gateone'):
+        cli_command = "termlog "
+    usage = '\t%prog {0}[options] <log file>'.format(cli_command)
     parser = OptionParser(usage=usage, version=__version__)
-    parser.disable_interspersed_args()
     parser.add_option("-f", "--flat",
         dest="flat",
         default=False,
@@ -614,6 +617,8 @@ def main(args=sys.argv):
         print("ERROR: You must specify a log file to view.")
         parser.print_help()
         sys.exit(1)
+    if args[0].endswith('logviewer.py'):
+        args.pop(0) # Didn't get filtered out automatically for some reason
     log_path = args[0]
     if not os.path.exists(log_path):
         print("ERROR: %s does not exist" % log_path)
@@ -621,7 +626,7 @@ def main(args=sys.argv):
     sys_stdout = sys.stdout
     if bytes != str: # Python 3
         sys_stdout = sys.stdout.buffer
-    sys.stdout.flush() # Make sure it's empty before writing to the buffer
+    sys_stdout.flush() # Make sure it's empty before writing to the buffer
     try:
         if options.metadata:
             import json

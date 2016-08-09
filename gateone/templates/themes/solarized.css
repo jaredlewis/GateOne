@@ -8,13 +8,6 @@
     position: absolute;
     outline: none;
     overflow: hidden;
-    background-color: #002b36;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 0;
-    z-index: 0;
     font-size: 1em;
     /* WebKit */
     -webkit-transform-origin: top right;
@@ -34,6 +27,11 @@
     transform-origin: top right;
     transition: all 1s ease-in-out;
 }
+#{{container}} input, select {
+    background-color: #002b36;
+    color: #fff;
+    border: 1px #fff solid;
+}
 .✈centered_text {
     text-align: center;
 }
@@ -41,8 +39,13 @@
     margin: 0 auto;
     text-align: center;
 }
-.✈workspace {
+div.✈grid {
+    background-color: #002b36;
+    display: inline-block;
+}
+div.✈workspace {
     color: #FFF;
+    background-color: #002b36;
     position: relative;
     float: left;
     -webkit-transition: -webkit-transform 1s ease-in-out;
@@ -91,29 +94,28 @@
     left: 0;
     background-image: linear-gradient(to top, rgba(255, 255, 255, 0.46) 0%,rgba(125,185,232,0) 100%);
 }
-.✈new_workspace_workspace {
+div.✈workspace .✈appchooser {
     width: 100%;
     height: 100%;
     overflow-y: auto;
-    background-color: #000;
+    background-color: rgba(0, 26, 33, 0.5);
 }
-.✈new_workspace_workspace_title {
+div.✈workspace .✈appchooser_title {
+    color: #fff;
     text-align: center;
     width: 80%;
-    background-color: #000;
     font-family: Ubuntu, Arial, sans-serif;
     border-bottom: 1px solid #222;
     margin: 0 auto;
 }
-.✈app_grid {
-    width: 80%;
+div.✈workspace .✈appchooser .✈app_grid {
     margin: 0 auto;
     text-align: center;
 }
-.✈application {
+div.✈workspace .✈appchooser .✈application {
     display: inline-block;
     width: 15%;
-    background: linear-gradient(to bottom, #333, #191919);
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.3), rgba(0, 26, 44, 0.5));
     border-color: rgba(0, 0, 0, 0.1) rgba(0, 0, 0, 0.1) rgba(0, 0, 0, 0.25);
     border: 1px solid rgba(0, 0, 0, 0);
     text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.25);
@@ -124,24 +126,23 @@
     border-radius: 1em;
     margin-left: 2%;
     margin-right: 2%;
-    padding-left: 1.5em;
-    padding-right: 1.5em;
     width: 15%;
     height: 10em;
     font-family: sans-serif;
+    min-width: 6.5em;
 }
-.✈application span {
+div.✈workspace .✈appchooser .✈application span {
     margin: 0 0 1em 0;
     word-wrap: break-word;
     display: inline-block;
 }
-.✈application:hover {
+div.✈workspace .✈appchooser .✈application:hover {
     box-shadow: 0 0 0.6em #444;
     background: linear-gradient(to bottom, #333, #686868);
     cursor: pointer;
     text-shadow: .1em .1em .4em #000;
 }
-.✈application:focus {
+div.✈workspace .✈appchooser .✈application:focus {
     box-shadow: 0 0 0.6em #444;
     background: linear-gradient(to bottom, #333, #686868);
     cursor: pointer;
@@ -305,7 +306,7 @@ potential conflicts with other classes that may be on the page.
     margin: 0;
     display: -webkit-box;
     display: -moz-box;
-    display: -ms-box;
+    display: -ms-flexbox;
     display: flex;
     -webkit-box-orient: vertical;
     -moz-box-orient: vertical;
@@ -333,7 +334,7 @@ potential conflicts with other classes that may be on the page.
     background-color: rgba(0, 0, 0, 0.7);
     display: -webkit-box;
     display: -moz-box;
-    display: -ms-box;
+    display: -ms-flexbox;
     display: flex;
     -webkit-box-orient: vertical;
     -moz-box-orient: vertical;
@@ -440,11 +441,12 @@ potential conflicts with other classes that may be on the page.
     background: #002b36;
     color: #839496;
     font-family: sans-serif;
-    z-index: 800; /* Same as toolbar */
+    z-index: 400; /* Same as toolbar */
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: .4em;
     padding-top: .2em;
+    padding-bottom: .2em;
     padding-left: .4em;
     font-size: 1em;
     margin: 0.1em;
@@ -466,7 +468,7 @@ potential conflicts with other classes that may be on the page.
     transition: all 0.5s ease-in-out;
     box-shadow: 0.2em 0.2em 0.5em #000;
     border: 0.1em #fff outset;
-    border-radius: 0.3em;
+    border-radius: 0.15em;
 }
 .✈panel h2 {
     width: 100%;
@@ -496,7 +498,7 @@ potential conflicts with other classes that may be on the page.
 }
 .✈paneltable {
     position: relative;
-    width: 100%;
+    width: 96.8%;
     padding-bottom: 0.5em;
     margin-bottom: 0.2em;
     border: 0.1em #fff solid;
@@ -592,44 +594,22 @@ potential conflicts with other classes that may be on the page.
     text-decoration: none;
     padding: .2em 0.5em .25em;
     margin-right: 0.25em;
-    border-radius: .5em;
-    box-shadow: 1px 1px 2px rgba(0,0,0,.2);
+    border-radius: .15em;
     font-weight: bold;
     font-size: 0.9em;
+    background-color: #002b36;
+    border: 0;
+    transition: box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition-delay: 0.2s;
+    box-shadow: 0 2px 5px 0 rgba(0, 0, 0, 0.6);
+    color: white;
 }
 .✈button:hover {
     text-decoration: none;
+    background-color: #00151A;
 }
 .✈button:active {
     position: relative;
-}
-/* black buttons */
-.✈black {
-    color: #FFF;
-    border: solid 1px #333;
-    background: #333;
-    background: -webkit-gradient(linear, left top, left bottom, from(#666), to(#000));
-    background: -moz-linear-gradient(top,  #666,  #000);
-    background: -o-linear-gradient(top,  #666,  #000);
-    background: linear-gradient(top,  #666,  #000);
-}
-.✈black:hover {
-    background: #000;
-    background: -webkit-gradient(linear, left top, left bottom, from(#444), to(#000));
-    background: -moz-linear-gradient(top,  #444,  #000);
-    background: -o-linear-gradient(top,  #444,  #000);
-    background: linear-gradient(top,  #444,  #000);
-}
-.✈black:active {
-    color: #666;
-    background: -webkit-gradient(linear, left top, left bottom, from(#000), to(#444));
-    background: -moz-linear-gradient(top,  #000,  #444);
-    background: -o-linear-gradient(top,  #000,  #444);
-    background: linear-gradient(top,  #000,  #444);
-}
-.✈black:focus {
-    color: #fff;
-    box-shadow: 0em 0em 1em #000;
 }
 .✈user_info {
     font-size: 0.8em;
@@ -648,13 +628,9 @@ potential conflicts with other classes that may be on the page.
     left: 25%;
     background-color: #CCC;
     z-index: 850;
-/*     border: solid 1px #000; */
     color: #000;
-    border-radius: 0.5em;
+    border-radius: 0.15em;
     box-shadow: 0.2em 0.2em 0.5em #000;
-    background-image: -moz-linear-gradient(#eee, #aaa);
-    background-image: -webkit-linear-gradient(#eee, #aaa);
-    background-image: -o-linear-gradient(#eee, #aaa);
     background-image: linear-gradient(#eee, #aaa);
 }
 .✈dialogcontainer h3 {
@@ -668,13 +644,14 @@ potential conflicts with other classes that may be on the page.
     padding-right: 1.5em; /* Making room for the X */
     padding-left: 1.5em; /* Balancing it out so the title stays centered */
     padding-top: 0;
-    padding-bottom: .1em;
+    padding-bottom: 1px; /* To ensure the text doesn't touch the bottom */
     text-align: center;
     font-size: 0.9em;
-    border-radius: 0.25em 0.25em 0 0;
+    border-radius: 0.15em 0.15em 0 0;
+    line-height: 1.5;
 }
 .✈dialogcontainer p {
-    padding: 0.5em;
+    margin: 0;
 }
 .✈dialogcontainer textarea {
     padding: 0.2em 0.2em;
@@ -729,7 +706,8 @@ potential conflicts with other classes that may be on the page.
 }
 .✈dialog_icon {
     margin-top: 0.2em;
-    margin-right: 0.3em;
+    margin-right: 0.1em;
+    margin-left: 0.1em;
     cursor: pointer;
     opacity: .75;
     float: right;
@@ -748,6 +726,23 @@ potential conflicts with other classes that may be on the page.
     margin-right: 0.4em;
 }
 .✈dialog_close {
+}
+.✈prefsdialog {
+    background: #002b36;
+}
+.✈alertdialog {
+    background: #002b36;
+    color: white;
+    text-align: center;
+    min-width: 25em;
+    min-height: 7em;
+}
+.✈confirmdialog {
+    background: #002b36;
+    color: white;
+    text-align: center;
+    min-width: 25em;
+    min-height: 7em;
 }
 .✈draghandle {
     background-color: transparent;
@@ -888,10 +883,7 @@ potential conflicts with other classes that may be on the page.
     display: table-cell;
     max-width: 13em;
     padding-right: 0.5em;
-    background-image: -moz-linear-gradient(top, #fff, rgba(200, 200, 200, 0.5));
-    background-image: -webkit-linear-gradient(top, #fff, rgba(200, 200, 200, 0.5));
-    background-image: -o-linear-gradient(top, #fff, rgba(200, 200, 200, 0.5));
-    background-image: linear-gradient(top,  #fff, rgba(200, 200, 200, 0.5));
+    background-image: linear-gradient(to bottom,  #fff, rgba(200, 200, 200, 0.5));
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -988,7 +980,6 @@ div.✈widget_close .✈svgplain { fill: #FFFFFF; }
 /* Optimize Gate One for mobile devices */
 @media only screen and (max-width: 800px) {
     .✈toolbar {
-        right: 0.25em;
         font-size: 100%;
         -webkit-transform: scale(2) translate(-40%, 25%);
         /* For whatever reason scaling doesn't work properly in Firefox Mobile but that's OK since the icons appear to be big enough to usable regardless */
@@ -1003,7 +994,6 @@ div.✈widget_close .✈svgplain { fill: #FFFFFF; }
         display: none; /* Not enough room for it on mobile */
     }
     .✈app_grid {
-        width: 90%;
         margin: 0 auto;
         text-align: center;
     }
@@ -1011,8 +1001,6 @@ div.✈widget_close .✈svgplain { fill: #FFFFFF; }
         display: inline-block;
         margin-top: 0.5em;
         border-radius: 0.5em;
-        padding-left: 0.5em;
-        padding-right: 0.5em;
         width: 6.5em;
         height: 8.5em;
     }

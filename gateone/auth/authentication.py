@@ -73,7 +73,7 @@ Docstrings
 """
 
 # Import stdlib stuff
-import os, re, logging
+import os, re, logging, json
 try:
     from urllib import quote
 except ImportError: # Python 3
@@ -91,12 +91,13 @@ import tornado.web
 import tornado.auth
 import tornado.escape
 import tornado.httpclient
+import tornado.gen
+from tornado.options import options
 
 # Localization support
 _ = get_translation()
 
 # Globals
-GATEONE_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_CACHE = {} # Lists of settings files and their modification times
 # The security stuff below is a work-in-progress.  Likely to change all around.
 
@@ -115,7 +116,7 @@ def additional_attributes(user, settings_dir=None):
     """
     # Doesn't do anything yet
     if not settings_dir:
-        settings_dir = os.path.join(GATEONE_DIR, 'settings')
+        settings_dir = options.settings_dir
     return user
 
 
@@ -152,7 +153,13 @@ class BaseAuthHandler(tornado.web.RequestHandler):
         user.update(additional_attributes(user))
         # Make a directory to store this user's settings/files/logs/etc
         try:
-            user_dir = os.path.join(self.settings['user_dir'], user['upn'])
+            # NOTE: These bytes checks are for Python 2 (not needed in Python 3)
+            upn = user['upn']
+            if isinstance(user['upn'], bytes):
+                upn = user['upn'].decode('utf-8')
+            user_dir = os.path.join(self.settings['user_dir'], upn)
+            if isinstance(user_dir, bytes):
+                user_dir = user_dir.decode('utf-8')
             if not os.path.exists(user_dir):
                 logging.info(_("Creating user directory: %s" % user_dir))
                 mkdir_p(user_dir)
@@ -283,21 +290,32 @@ class APIAuthHandler(BaseAuthHandler):
         self.write('unauthenticated')
         self.finish()
 
-class GoogleAuthHandler(BaseAuthHandler, tornado.auth.GoogleMixin):
+
+class GoogleAuthHandler(BaseAuthHandler, tornado.auth.GoogleOAuth2Mixin):
     """
-    Google authentication handler using Tornado's built-in GoogleMixin (fairly
-    boilerplate).
+    Google authentication handler using Tornado's built-in GoogleOAuth2Mixin
+    (fairly boilerplate).
     """
-    @tornado.web.asynchronous
+    @tornado.gen.coroutine
     def get(self):
         """
         Sets the 'user' cookie with an appropriate *upn* and *session* and any
         other values that might be attached to the user object given to us by
         Google.
         """
+        self.base_url = "{protocol}://{host}:{port}{url_prefix}".format(
+            protocol=self.request.protocol,
+            host=self.request.host,
+            port=self.settings['port'],
+            url_prefix=self.settings['url_prefix'])
+        uri_port = ':{0}/'.format(self.settings['port'])
+        if uri_port in self.base_url:
+            # Get rid of the port (will be added automatically)
+            self.base_url = self.base_url.replace(uri_port, '/', 1)
+        redirect_uri = "{base_url}auth".format(base_url=self.base_url)
         check = self.get_argument("check", None)
         if check:
-            self.set_header ('Access-Control-Allow-Origin', '*')
+            self.set_header('Access-Control-Allow-Origin', '*')
             user = self.get_current_user()
             if user:
                 logging.debug('GoogleAuthHandler: user is authenticated')
@@ -314,26 +332,50 @@ class GoogleAuthHandler(BaseAuthHandler, tornado.auth.GoogleMixin):
             self.clear_cookie('gateone_user')
             self.user_logout(user, logout_url)
             return
-        if self.get_argument("openid.mode", None):
-            self.get_authenticated_user(self._on_auth)
-            return
-        self.authenticate_redirect(
-            ax_attrs=["name", "email", "language", "username"])
+        if self.get_argument('code', False):
+            user = yield self.get_authenticated_user(
+                redirect_uri=redirect_uri,
+                code=self.get_argument('code'))
+            if not user:
+                self.clear_all_cookies()
+                raise tornado.web.HTTPError(500, 'Google auth failed')
+            access_token = str(user['access_token'])
+            http_client = self.get_auth_http_client()
+            response =  yield http_client.fetch(
+                'https://www.googleapis.com/oauth2/v1/userinfo?access_token='
+                +access_token)
+            if not response:
+                self.clear_all_cookies()
+                raise tornado.web.HTTPError(500, 'Google auth failed')
+            user = json.loads(response.body.decode('utf-8'))
+            self._on_auth(user)
+        else:
+            yield self.authorize_redirect(
+                redirect_uri=redirect_uri,
+                client_id=self.settings['google_oauth']['key'],
+                scope=['email'],
+                response_type='code',
+                extra_params={'approval_prompt': 'auto'})
 
     def _on_auth(self, user):
         """
         Just a continuation of the get() method (the final step where it
         actually sets the cookie).
         """
+        logging.debug("GoogleAuthHandler.on_auth(%s)" % user)
         if not user:
             raise tornado.web.HTTPError(500, _("Google auth failed"))
         # NOTE: Google auth 'user' will be a dict like so:
-        # user = {
-        #     'locale': u'en-us',
-        #     'first_name': u'Dan',
-        #     'last_name': u'McDougall',
-        #     'name': u'Dan McDougall',
-        #     'email': u'daniel.mcdougall@liftoffsoftware.com'}
+        # user = {'given_name': 'Joe',
+        #    'verified_email': True,
+        #    'hd': 'example.com',
+        #    'gender': 'male',
+        #    'email': 'joe.schmoe@example.com',
+        #    'name': 'Joe Schmoe',
+        #    'picture': 'https://lh6.googleusercontent.com/path/to/some.jpg',
+        #    'id': '999999999999999999999',
+        #    'family_name': 'Schmoe',
+        #    'link': 'https://plus.google.com/999999999999999999999'}
         user['upn'] = user['email'] # Use the email for the upn
         self.user_login(user)
         next_url = self.get_argument("next", None)
@@ -564,7 +606,7 @@ class CASAuthHandler(BaseAuthHandler):
             url_prefix=self.settings['url_prefix'])
         check = self.get_argument("check", None)
         if check:
-            self.set_header ('Access-Control-Allow-Origin', '*')
+            self.set_header('Access-Control-Allow-Origin', '*')
             user = self.get_current_user()
             if user:
                 logging.debug('CASAuthHandler: user is authenticated')
@@ -602,7 +644,11 @@ class CASAuthHandler(BaseAuthHandler):
         if not cas_server.endswith('/'):
             cas_server += '/'
         service_url = "%sauth" % self.base_url
-        redirect_url = '%slogin?service=%s' % (cas_server, quote(service_url))
+        next_url = self.get_argument('next', None)
+        next_param = ""
+        if next_url:
+            next_param = "?next=" + quote(next_url)
+        redirect_url = '%slogin?service=%s%s' % (cas_server, quote(service_url), quote(next_param))
         logging.debug("Redirecting to CAS URL: %s" % redirect_url)
         self.redirect(redirect_url)
         if callback:
@@ -624,11 +670,16 @@ class CASAuthHandler(BaseAuthHandler):
         validate_suffix = 'proxyValidate'
         if cas_version == 1:
             validate_suffix = 'validate'
+        next_url = self.get_argument('next', None)
+        next_param = ""
+        if next_url:
+            next_param = "?next=" + quote(next_url)
         validate_url = (
             cas_server +
             validate_suffix +
             '?service=' +
             quote(service_url) +
+            quote(next_param) +
             '&ticket=' +
             quote(server_ticket)
         )

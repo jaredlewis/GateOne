@@ -13,7 +13,7 @@ for scheme in INSTALL_SCHEMES.values():
 PYTHON3 = False
 POSIX = 'posix' in sys.builtin_module_names
 version = '1.2.0'
-requires = ["tornado >=3.2", "html5lib >= 0.999"]
+requires = ["tornado >=4.0", "html5lib >= 0.999"]
 extra = {}
 data_files = []
 major, minor = sys.version_info[:2] # Python version
@@ -74,6 +74,7 @@ if '--skip_init_scripts' in sys.argv:
 init_script = []
 conf_file = [] # Only used on Gentoo
 upstart_file = [] # Only used on Ubuntu (I think)
+systemd_file = [] # Only used on systems with systemd
 debian_script = os.path.join(setup_dir, 'scripts/init/gateone-debian.sh')
 redhat_script = os.path.join(setup_dir, 'scripts/init/gateone-redhat.sh')
 freebsd_script = os.path.join(setup_dir, 'scripts/init/gateone-freebsd.sh')
@@ -114,7 +115,7 @@ if not skip_init:
         # This pkg-config command tells us where to put systemd .service files:
         retcode, systemd_system_unit_dir = getstatusoutput(
             'pkg-config systemd --variable=systemdsystemunitdir')
-        upstart_file = [systemd_system_unit_dir, [systemd_temp_path]]
+        systemd_file = [systemd_system_unit_dir, [systemd_temp_path]]
     # Handle FreeBSD and regular init.d scripts
     if os.path.exists(bsd_temp_script):
         init_script = ['/usr/local/etc/rc.d', [bsd_temp_script]]
@@ -137,6 +138,8 @@ def fullsplit(path, result=None):
     return fullsplit(head, [tail] + result)
 
 gateone_dir = os.path.join(setup_dir, 'gateone')
+plugin_dir = os.path.join(gateone_dir, 'plugins')
+app_dir = os.path.join(gateone_dir, 'applications')
 
 ignore_list = [
     '__pycache__',
@@ -153,6 +156,7 @@ if '--skip_docs' in sys.argv:
     ignore_list.append('docs')
     sys.argv.remove('--skip_docs')
 
+os.chdir(setup_dir)
 for dirpath, dirnames, filenames in os.walk('gateone'):
     # Ignore PEP 3147 cache dirs and those whose names start with '.'
     dirnames[:] = [
@@ -170,6 +174,41 @@ for dirpath, dirnames, filenames in os.walk('gateone'):
             if f not in ignore_list]
         ])
 
+entry_points = {
+    'console_scripts': ['gateone = gateone.core.server:main'],
+    'go_plugins': [],
+    'go_applications': [],
+}
+# Add plugin entry points for Python plugins
+plugin_ep_template = '{name} = gateone.plugins.{name}'
+for filename in os.listdir(plugin_dir):
+    path = os.path.join(plugin_dir, filename)
+    if os.path.isdir(path):
+        if '__init__.py' in os.listdir(path):
+            entry_points['go_plugins'].append(
+                plugin_ep_template.format(name=filename))
+# Add application (and their plugins) entry points
+app_ep_template = '{name} = gateone.applications.{name}'
+app_plugin_ep_template = '{name} = gateone.applications.{app}.plugins.{name}'
+for filename in os.listdir(app_dir):
+    path = os.path.join(app_dir, filename)
+    if os.path.isdir(path):
+        if '__init__.py' in os.listdir(path):
+            entry = app_ep_template.format(name=filename)
+            entry_points['go_applications'].append(entry)
+        if 'plugins' in os.listdir(path):
+            plugins_path = os.path.join(path, 'plugins')
+            for f in os.listdir(plugins_path):
+                ppath = os.path.join(plugins_path, f)
+                if os.path.isdir(ppath):
+                    if '__init__.py' in os.listdir(ppath):
+                        plugin_ep_name = 'go_%s_plugins' % filename
+                        entry = app_plugin_ep_template.format(
+                            app=filename, name=f)
+                        if not plugin_ep_name in entry_points:
+                            entry_points[plugin_ep_name] = []
+                        entry_points[plugin_ep_name].append(entry)
+
 if os.getuid() == 0 and not skip_init:
     if init_script:
         data_files.append(init_script)
@@ -177,6 +216,8 @@ if os.getuid() == 0 and not skip_init:
         data_files.append(conf_file)
     if upstart_file:
         data_files.append(upstart_file)
+    if systemd_file:
+        data_files.append(systemd_file)
 else:
     print("You are not root; skipping installation of init scripts.")
 
@@ -277,16 +318,55 @@ setup(
     install_requires = requires,
     zip_safe = False, # TODO: Convert everything to using pkg_resources
     py_modules = ["gateone"],
-    entry_points = {
-        'console_scripts': [
-            'gateone = gateone.core.server:main'
-        ]
-    },
+    entry_points = entry_points,
     provides = ['gateone', 'termio', 'terminal', 'onoff'],
     packages = packages,
     data_files = data_files,
     **extra
 )
+
+# For whatever reason 2to3 doesn't fix the shebang in the ssh_connect.py
+# script on systems with both python2 and python3.  Double-check that and fix it
+# if needed:
+if PYTHON3:
+    # We only need to fix the shebang if the 'python' executable is Python 2.X
+    retcode, output = getstatusoutput('python --version')
+    if output.split()[1].startswith('2'):
+        for path in sys.path:
+            try:
+                files = os.listdir(path)
+            except (NotADirectoryError, FileNotFoundError):
+                continue
+            for f in files:
+                if 'gateone' in f: # Found an installation
+                    ssh_connect = os.path.join(
+                        path, f, 'gateone', 'applications', 'terminal',
+                        'plugins', 'ssh', 'scripts', 'ssh_connect.py')
+                    if setup_dir in ssh_connect:
+                        continue # Don't mess with the downloaded code
+                    if not os.path.exists(ssh_connect):
+                        # Alternate location on some systems:
+                        ssh_connect = os.path.join(
+                            path, f, 'applications', 'terminal', 'plugins',
+                            'ssh', 'scripts', 'ssh_connect.py')
+                    if os.path.exists(ssh_connect):
+                        new_ssh_connect = b''
+                        for i, line in enumerate(open(ssh_connect, 'rb')):
+                            if i == 0 and not line.strip().endswith(b'python3'):
+                                print(
+                                    "Changing shebang to use 'python3' in %s" %
+                                    ssh_connect)
+                                new_ssh_connect += b'#!/usr/bin/env python3\n'
+                            else:
+                                new_ssh_connect += line
+                        with open(ssh_connect, 'wb') as new_ssh_c:
+                            new_ssh_c.write(new_ssh_connect)
+
+print("Entry points were created for the following:")
+for ep, items in sorted(list(entry_points.items())):
+    print("    %s" % ep)
+    for item in sorted(items):
+        print("        %s" % item)
 
 if not os.path.exists('/opt/gateone'):
     # Don't bother printing out the migration info below if the user has never

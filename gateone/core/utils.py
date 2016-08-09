@@ -399,9 +399,10 @@ def json_encode(obj):
 
 def gen_self_signed_ssl(path=None):
     """
-    Generates a self-signed SSL certificate using `pyOpenSSL` or the `openssl <http://www.openssl.org/docs/apps/openssl.html>`_ command depending on
-    what's available,  The resulting key/certificate will use the RSA algorithm
-    at 4096 bits.
+    Generates a self-signed SSL certificate using `pyOpenSSL` or the
+    `openssl <http://www.openssl.org/docs/apps/openssl.html>`_ command
+    depending on what's available,  The resulting key/certificate will use the
+    RSA algorithm at 4096 bits.
     """
     try:
         import OpenSSL
@@ -533,7 +534,7 @@ def gen_self_signed_pyopenssl(notAfter=None, path=None):
         f.write(OpenSSL.crypto.dump_privatekey(
             OpenSSL.crypto.FILETYPE_PEM, pkey))
     cert = OpenSSL.crypto.X509()
-    cert.set_serial_number(random.randint(0, sys.maxint))
+    cert.set_serial_number(random.randint(0, sys.maxsize))
     cert.gmtime_adj_notBefore(0)
     if notAfter:
         cert.gmtime_adj_notAfter(notAfter)
@@ -544,7 +545,7 @@ def gen_self_signed_pyopenssl(notAfter=None, path=None):
     cert.get_issuer().CN = 'Untrusted Authority'
     cert.get_issuer().O = 'Self-Signed'
     cert.set_pubkey(pkey)
-    cert.sign(pkey, 'md5')
+    cert.sign(pkey, 'sha512')
     with io.open(certfile_path, mode='wb') as f:
         f.write(OpenSSL.crypto.dump_certificate(
             OpenSSL.crypto.FILETYPE_PEM, cert))
@@ -687,15 +688,18 @@ def short_hash(to_shorten):
 
 def random_words(n=1):
     """
-    Returns *n* random English words (as a tuple) from the `english_wordlist.txt`
-    file (bundled with Gate One).
+    Returns *n* random English words (as a tuple of strings) from the
+    `english_wordlist.txt` file (bundled with Gate One).
+
+    .. note:: In Python 2 the words will be Unicode strings.
     """
     from pkg_resources import resource_string
     words = resource_string(
-        'gateone', 'static/english_wordlist.txt').split('\n')
+        'gateone', 'static/english_wordlist.txt').split(b'\n')
     out_words = []
     for i in range(n):
-        out_words.append(words[random.randint(0, len(words))].lower())
+        word = words[random.randint(0, len(words))].lower()
+        out_words.append(word.decode('utf-8'))
     return tuple(out_words)
 
 def get_process_tree(parent_pid):
@@ -799,8 +803,9 @@ def killall(session_dir, pid_file):
     :pid_file: The path to Gate One's PID file
     """
     if not os.path.exists(session_dir):
-        logging.info("No lieutenant, your processes are already dead.")
+        logging.info(_("No lieutenant, your processes are already dead."))
         return # Nothing to do
+    logging.info(_("Killing all Gate One processes..."))
     sessions = os.listdir(session_dir)
     for f in os.listdir('/proc'):
         pid_dir = os.path.join('/proc', f)
@@ -885,138 +890,71 @@ def kill_session_processes(session):
     logging.debug('kill_session_processes cmd: %s' % cmd)
     exitstatus, output = shell_command(cmd)
 
-def get_applications(application_dir, enabled=None):
+def entry_point_files(ep_group, enabled=None):
     """
-    Adds applications' Python files to `sys.path` (if necessary) and returns a
-    list containing the name of each application.  If given, only applications
-    in the *enabled* list will be returned.
-    """
-    out_list = []
-    for directory in os.listdir(application_dir):
-        application = directory.lower()
-        directory = os.path.join(application_dir, directory) # Make absolute
-        module_path = 'gateone.applications.%s' % application
-        if not os.path.isdir(directory):
-            continue
-        if enabled and application not in enabled:
-            continue
-        application_files = os.listdir(directory)
-        if "__init__.py" in application_files:
-            out_list.append(module_path) # Just need the base
-        else: # Look for .py files
-            for app_file in application_files:
-                if app_file.endswith('.py'):
-                    app_path = os.path.join(directory, app_file)
-                    sys.path.insert(0, directory)
-                    (basename, ext) = os.path.splitext(app_path)
-                    basename = basename.split('/')[-1]
-                    module_path = "%s.%s" % (module_path, basename)
-                    out_list.append(module_path)
-    # Sort alphabetically so the order in which they're applied can
-    # be controlled somewhat predictably
-    out_list.sort()
-    return out_list
-
-def get_plugins(plugin_dir, enabled=None, basepath=None):
-    """
-    Adds plugins' Python files to `sys.path` and returns a dictionary of
-    JavaScript, CSS, and Python files contained in *plugin_dir* like so::
+    Given an entry point group name (*ep_group*), returns a dict of available
+    Python, JS, and CSS plugins for Gate One::
 
         {
-            'js': [ // NOTE: These would be be inside *plugin_dir*/static
-                'happy_plugin/static/whatever.js',
-                'ssh/static/ssh.js',
-            ],
-            'css': [
-                'bookmarks/static/bookmarks.css',
-                'ssh/templates/ssh.css'
-            ],
-            // NOTE: CSS URLs will require '&container=<container>' and '&prefix=<prefix>' to load.
-            'py': [ // NOTE: These will get added to sys.path
-                'happy_plugin',
-                'ssh'
-            ],
+            'css': ['editor/static/codemirror.css'],
+            'js': ['editor/static/codemirror.js', 'editor/static/editor.js'],
+            'py': [<module 'gateone.plugins.editor' from 'gateone/plugins/editor/__init__.pyc'>]
         }
 
-    \*.js files inside of *plugin_dir*/<the plugin>/static will get automatically
-    added to Gate One's index.html like so:
+    Optionally, the returned dict will include only those modules and files for
+    plugins in the *enabled* list (if given).
 
-    .. code-block:: html
+    .. note::
 
-        {% for jsplugin in jsplugins %}
-            <script type="text/javascript" src="{{jsplugin}}"></script>
-        {% end %}
+        Python plugins will be imported automatically as part of the
+        discovery process.
 
-    \*.css files will get imported automatically by GateOne.init()
+    To do this it uses the `pkg_resources` module from setuptools.  For plugins
+    to be imported correctly they need to register themselves using the given
+    `entry_point` group (*ep_group*) in their setup.py.  Gate One (currently)
+    uses the following entry point group names:
 
-    Optionally, a list of *enabled* (Python) plugins may be provided and only
-    those plugins will be added to the 'py' portion of the returned dict.
+        * go_plugins
+        * go_applications
+        * go_applications_plugins
 
-    Optionally, if a *basepath* is given imported plugin modules will be
-    imported like so:
-
-        <basepath>.plugin_module_name
-
-    For example::
-
-        get_plugins(
-            "/path/to/gateone/applications/terminal/plugins",
-            basepath="gateone.application.terminal.plugins")
+    ...but this function can return the JS, CSS, and Python modules for any
+    entry point that uses the same module_name/static/ layout.
     """
-    out_dict = {'js': [], 'css': [], 'py': []}
-    if not os.path.exists(plugin_dir):
-        return out_dict
-    for directory in os.listdir(plugin_dir):
-        directory = directory.lower()
-        if enabled and directory not in enabled:
+    import pkg_resources, operator
+    if not enabled:
+        enabled = []
+    ep_dict = {
+        'py': {},
+        'js': {},
+        'css': {}
+    }
+    for plugin in pkg_resources.iter_entry_points(group=ep_group):
+        if enabled and plugin.name not in enabled:
+            continue # Not enabled, skip it
+        try:
+            module = plugin.load()
+        except ImportError:
+            logging.warning(
+                _("Could not import entry point module: {0}").format(
+                    plugin.module_name))
             continue
-        plugin = directory
-        module_path_list = os.path.normpath(plugin_dir).split(os.path.sep)
-        # Find the *last* directory named 'gateone'
-        for i, _dir in enumerate(module_path_list):
-            if _dir == 'gateone': # If we ever change the name... Fix this
-                go_index = i
-        module_base = '.'.join(module_path_list[go_index:])
-        module_path = '%s.%s' % (module_base, plugin)
-        http_static_path = '%s/static' % plugin
-        http_template_path = '%s/templates' % plugin
-        directory = os.path.join(plugin_dir, directory) # Make absolute
-        if not os.path.isdir(directory):
-            continue # This is not a plugin
-        plugin_files = os.listdir(directory)
-        if "__init__.py" in plugin_files:
-            out_dict['py'].append(module_path) # Just need the base
-        else: # Look for .py files
-            for plugin_file in plugin_files:
-                if plugin_file.endswith('.py'):
-                    plugin_path = os.path.join(directory, plugin_file)
-                    sys.path.insert(0, directory)
-                    (basename, ext) = os.path.splitext(plugin_path)
-                    basename = basename.split('/')[-1]
-                    out_dict['py'].append(basename)
-        for plugin_file in plugin_files:
-            if plugin_file == 'static':
-                static_dir = os.path.join(directory, plugin_file)
-                for static_file in os.listdir(static_dir):
-                    if static_file.endswith('.js'):
-                        http_path = os.path.join(http_static_path, static_file)
-                        out_dict['js'].append(http_path)
-                    elif static_file.endswith('.css'):
-                        http_path = os.path.join(http_static_path, static_file)
-                        out_dict['css'].append(http_path)
-            if plugin_file == 'templates':
-                templates_dir = os.path.join(directory, plugin_file)
-                for template_file in os.listdir(templates_dir):
-                    if template_file.endswith('.css'):
-                        http_path = os.path.join(
-                            http_template_path, template_file)
-                        out_dict['css'].append(http_path)
-    # Sort all plugins alphabetically so the order in which they're applied can
-    # be controlled somewhat predictably
-    out_dict['py'].sort()
-    out_dict['js'].sort()
-    out_dict['css'].sort()
-    return out_dict
+        ep_dict['py'][plugin.module_name] = module
+        static_path = plugin.module_name.replace('.', '/') + '/static/'
+        try:
+            pkg_files = pkg_resources.resource_listdir(
+                plugin.module_name, '/static/')
+        except OSError:
+            continue
+        ep_dict['js'][plugin.module_name] = []
+        ep_dict['css'][plugin.module_name] = []
+        for f in pkg_files:
+            f_path = "/static/%s" % f
+            if f.endswith('.js'):
+                ep_dict['js'][plugin.module_name].append(f_path)
+            elif f.endswith('.css'):
+                ep_dict['css'][plugin.module_name].append(f_path)
+    return ep_dict
 
 def load_modules(modules):
     """
@@ -1200,7 +1138,7 @@ def raw(text, replacement_dict=None):
     equivalents using *replacement_dict*.  If *replacement_dict* is None or
     False the global REPLACEMENT_DICT will be used.  Example::
 
-        >>> test = '\\x1b]0;Some xterm title\x07'
+        >>> test = '\\x1b]0;Some xterm title\\x07'
         >>> print(raw(test))
         '^[]0;Some title^G'
     """
@@ -1340,17 +1278,18 @@ def valid_hostname(hostname, allow_underscore=False):
         True
     """
     # Convert to Punycode if an IDN
-    try:
-        hostname = hostname.encode('idna')
-    except UnicodeError: # Can't convert to Punycode: Bad hostname
-        return False
+    if isinstance(hostname, str):
+        try:
+            hostname = hostname.encode('idna')
+        except UnicodeError: # Can't convert to Punycode: Bad hostname
+            return False
     if len(hostname) > 255:
         return False
-    if hostname[-1:] == ".": # Strip the tailing dot if present
+    if hostname[-1:] == b".": # Strip the tailing dot if present
         hostname = hostname[:-1]
-    allowed = re.compile("(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
+    allowed = re.compile(b"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
     if allow_underscore:
-        allowed = re.compile("(?!-)[_A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
+        allowed = re.compile(b"(?!-)[_A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
     return all(allowed.match(x) for x in hostname.split(b"."))
 
 def recursive_chown(path, uid, gid):
@@ -1442,21 +1381,14 @@ def minify(path_or_fileobj, kind):
     `cssmin`, respectively.
     """
     out = None
-    # Optional:  If slimit is installed Gate One will use it to minify JS and CSS
     try:
         import slimit
     except ImportError:
         slimit = None
-        #logging.warning(_(
-            #"slimit module not found.  JavaScript will not be minified."))
-        #logging.info(_("To install slimit:  sudo pip install slimit"))
     try:
         import cssmin
     except ImportError:
         cssmin = None
-        #logging.warning(_(
-            #"cssmin module not found.  CSS will not be minified."))
-        #logging.info(_("To install cssmin:  sudo pip install cssmin"))
     if isinstance(path_or_fileobj, basestring):
         filename = os.path.split(path_or_fileobj)[1]
         with io.open(path_or_fileobj, mode='r', encoding='utf-8') as f:
@@ -1466,26 +1398,26 @@ def minify(path_or_fileobj, kind):
         data = path_or_fileobj.read()
     out = data
     if slimit and kind == 'js':
-        try:
-            out = slimit.minify(data)
+        if not filename.endswith('min.js'):
+            try:
+                out = slimit.minify(data, mangle=True)
+                logging.debug(_(
+                    "(saved ~%s bytes minifying %s)" % (
+                        (len(data) - len(out), filename)
+                    )
+                ))
+            except Exception:
+                logging.error(_("slimit failed trying to minify %s") % filename)
+                import traceback
+                traceback.print_exc(file=sys.stdout)
+    elif cssmin and kind == 'css':
+        if not filename.endswith('min.css'):
+            out = cssmin.cssmin(data)
             logging.debug(_(
                 "(saved ~%s bytes minifying %s)" % (
                     (len(data) - len(out), filename)
                 )
             ))
-        except Exception:
-            logging.error(_("slimit failed trying to minify %s") % filename)
-            import traceback
-            traceback.print_exc(file=sys.stdout)
-        del slimit # Don't need this anymore
-    elif cssmin and kind == 'css':
-        out = cssmin.cssmin(data)
-        logging.debug(_(
-            "(saved ~%s bytes minifying %s)" % (
-                (len(data) - len(out), filename)
-            )
-        ))
-        del cssmin # Don't need this anymore
     return out
 
 # This is so we can have the argument below be 'minify' (user friendly)
@@ -1724,8 +1656,8 @@ def create_signature(*parts, **kwargs):
         create_signature(
             'secret',
             'some-api-key',
-            '1234567890123',
             'user@somehost',
+            '1234567890123',
             hmac_algo=hashlib.sha1)
 
     .. note::
