@@ -2,4 +2,4 @@
 *.kate-swp
 .DS_Store
 .directory
-.idea
+.idea/*
