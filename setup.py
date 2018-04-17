@@ -13,7 +13,7 @@ for scheme in INSTALL_SCHEMES.values():
 PYTHON3 = False
 POSIX = 'posix' in sys.builtin_module_names
 version = '1.2.0'
-requires = ["tornado >=4.0", "html5lib >= 0.999"]
+requires = ["tornado >=4.0,<5.0", "html5lib >= 0.999"]
 extra = {}
 data_files = []
 package_data = []
