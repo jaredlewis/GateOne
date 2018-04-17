@@ -144,7 +144,7 @@ GateOne.Base.update(GateOne.Utils, {
 
         Example:
 
-            >>> GateOne.Utils.scrollToBottom('#term1_pre');
+            >>> GateOne.Utils.scrollToBottom('#'+GateOne.prefs.prefix+'term1_pre');
         */
         var node = GateOne.Utils.getNode(elem);
         if (node) {
@@ -241,7 +241,7 @@ GateOne.Base.update(GateOne.Utils, {
             }
             u.prevEmDimensions = {'w': nodeWidth, 'h': nodeHeight};
         } catch(e) {
-            logDebug("Error getting em dimensions (probably just a hidden terminal): " + e);
+            logDebug(gettext("Error getting em dimensions (probably just a hidden terminal): ") + e);
             // Cleanup
             if (where) {
                 where.removeChild(node);
@@ -430,7 +430,7 @@ GateOne.Base.update(GateOne.Utils, {
                 }, 100);
             };
         // Redirect the user to a page where they can accept the SSL certificate (it will redirect back)
-        GateOne.Visual.alert("JavaScript Load Error", "This can happen if you haven't accepted Gate One's SSL certificate yet.  Click OK to open a new tab/window where you can accept the Gate One server's SSL certificate.  If the page doesn't load it means the Gate One server is currently unavailable.", okCallback);
+        GateOne.Visual.alert(gettext("JavaScript Load Error"), gettext("This can happen if you haven't accepted Gate One's SSL certificate yet.  Click OK to open a new tab/window where you can accept the Gate One server's SSL certificate.  If the page doesn't load it means the Gate One server is currently unavailable."), okCallback);
     },
     loadScript: function(url, callback){
         /**:GateOne.Utils.loadScript(url[, callback])
@@ -593,6 +593,34 @@ GateOne.Base.update(GateOne.Utils, {
         Returns *string* with the first letter capitalized.
         */
         return string.charAt(0).toUpperCase() + string.slice(1);
+    },
+    Interval: function(fn, time) {
+        /**:GateOne.Utils.Interval(fn, time)
+
+        Returns an instance of an `Interval` object which is a slightly more intelligent way to handle interval-based callbacks than JavaScript's built-in `setInterval()` and `clearInterval()`.  Example usage:
+
+            >>> var clockUpdater = GateOne.Utils.Interval(updateFunc, 1000); // Start the Interval
+            >>> clockUpdater.start();
+            >>> // Some time goes by...
+            >>> clockUpdater.isRunning();
+            true
+            >>> clockUpdater.stop();
+            >>> clockUpdater.isRunning();
+            false
+        */
+        if (!(this instanceof Interval)) {return new Interval();}
+        var self = this; // Explicit is better than implicit
+        self.timer = false;
+        self.start = function () {
+            if (!self.isRunning()) { timer = setInterval(fn, time); }
+        };
+        self.stop = function () {
+            clearInterval(timer);
+            timer = false;
+        };
+        self.isRunning = function () {
+            return timer !== false;
+        };
     }
 });
 

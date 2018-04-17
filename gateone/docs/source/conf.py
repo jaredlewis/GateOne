@@ -87,6 +87,7 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
+    'sphinxcontrib.programoutput',
     'sphinxcontrib.ansi', # Displays text codes as they would appear in a shell
     'sphinxcontrib.autojs', # Lets us use docstring-like syntax in JS
 ]
@@ -113,7 +114,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Gate One'
-copyright = u'2013, Liftoff Software Corporation'
+copyright = u'2014, Liftoff Software Corporation'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -167,7 +168,7 @@ todo_include_todos = True
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'default'
+html_theme = 'sphinx_rtd_theme'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -186,7 +187,7 @@ html_short_title = "Gate One Documentation"
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = 'Images/ls_logo_1inch_300dpi.png'
+#html_logo = 'Images/ls_logo_1inch_300dpi.png'
 
 # The name of an image file (within the static path) to use as favicon of the
 # docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
@@ -261,7 +262,7 @@ latex_documents = [
 
 # The name of an image file (relative to this directory) to place at the top of
 # the title page.
-#latex_logo = None
+latex_logo = 'Images/ls_logo_1inch_300dpi.png'
 
 # For "manual" documents, if this is true, then toplevel headings are parts,
 # not chapters.
@@ -276,6 +277,42 @@ latex_documents = [
 # Additional stuff for the LaTeX preamble.
 #latex_preamble = ''
 
+# This is the current method (> Sphinx 0.5) of generating the preamble:
+#latex_elements = {
+    #'preamble': '''
+
+     #'''
+#}
+#preamble = '''
+#\makeatletter
+#\ProvideTextCommandDefault\textcommabelow[1]
+  #{\hmode@bgroup\ooalign{\null#1\crcr\hidewidth\raise-.31ex
+   #\hbox{\check@mathfonts\fontsize\ssf@size\z@
+   #\math@fontsfalse\selectfont,}\hidewidth}\egroup}
+#\makeatother
+#\usepackage{newunicodechar}
+#\newunicodechar{Ș}{\textcommabelow S}
+#\newunicodechar{ș}{\textcommabelow s}
+#\newunicodechar{Ț}{\textcommabelow T}
+#\newunicodechar{ț}{\textcommabelow t}
+#'''
+latex_elements = {
+    'papersize':'letterpaper',
+    'pointsize':'10pt',
+    'classoptions': ',openany',
+    'babel': '\\usepackage[english]{babel}',
+    'inputenc': '',
+    'utf8extra': '',
+    #'preamble': preamble
+    'preamble': '''
+        \\usepackage{sphinx}
+        \\hypersetup{unicode=true}
+        \\usepackage{fontspec}
+        \\setsansfont{Ubuntu}
+        \\setromanfont{Ubuntu}
+        \\setmonofont{Ubuntu Mono}
+    '''
+}
 # Documents to append as an appendix to all manuals.
 #latex_appendices = []
 

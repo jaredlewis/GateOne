@@ -8,13 +8,6 @@
     position: absolute;
     outline: none;
     overflow: hidden;
-    background-color: #000;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 0;
-    z-index: 0;
     font-size: 1em;
     /* WebKit */
     -webkit-transform-origin: top right;
@@ -41,8 +34,13 @@
     margin: 0 auto;
     text-align: center;
 }
-.✈workspace {
+div.✈grid {
+    background-color: #000;
+    display: inline-block;
+}
+div.✈workspace {
     color: #FFF;
+    background-color: #000;
     position: relative;
     float: left;
     -webkit-transition: -webkit-transform 1s ease-in-out;
@@ -91,26 +89,25 @@
     left: 0;
     background-image: linear-gradient(to top, rgba(255, 255, 255, 0.46) 0%,rgba(125,185,232,0) 100%);
 }
-.✈new_workspace_workspace {
+div.✈workspace .✈appchooser {
     width: 100%;
     height: 100%;
     overflow-y: auto;
     background-color: #000;
 }
-.✈new_workspace_workspace_title {
+div.✈workspace .✈appchooser_title {
+    color: #fff;
     text-align: center;
     width: 80%;
-    background-color: #000;
     font-family: Ubuntu, Arial, sans-serif;
     border-bottom: 1px solid #222;
     margin: 0 auto;
 }
-.✈app_grid {
-    width: 80%;
+div.✈workspace .✈appchooser .✈app_grid {
     margin: 0 auto;
     text-align: center;
 }
-.✈application {
+div.✈workspace .✈appchooser .✈application {
     display: inline-block;
     width: 15%;
     background: linear-gradient(to bottom, #333, #191919);
@@ -124,24 +121,23 @@
     border-radius: 1em;
     margin-left: 2%;
     margin-right: 2%;
-    padding-left: 1.5em;
-    padding-right: 1.5em;
     width: 15%;
     height: 10em;
     font-family: sans-serif;
+    min-width: 6.5em;
 }
-.✈application span {
+div.✈workspace .✈appchooser .✈application span {
     margin: 0 0 1em 0;
     word-wrap: break-word;
     display: inline-block;
 }
-.✈application:hover {
+div.✈workspace .✈appchooser .✈application:hover {
     box-shadow: 0 0 0.6em #444;
     background: linear-gradient(to bottom, #333, #686868);
     cursor: pointer;
     text-shadow: .1em .1em .4em #000;
 }
-.✈application:focus {
+div.✈workspace .✈appchooser .✈application:focus {
     box-shadow: 0 0 0.6em #444;
     background: linear-gradient(to bottom, #333, #686868);
     cursor: pointer;
@@ -305,7 +301,7 @@ potential conflicts with other classes that may be on the page.
     margin: 0;
     display: -webkit-box;
     display: -moz-box;
-    display: -ms-box;
+    display: -ms-flexbox;
     display: flex;
     -webkit-box-orient: vertical;
     -moz-box-orient: vertical;
@@ -333,7 +329,7 @@ potential conflicts with other classes that may be on the page.
     background-color: rgba(0, 0, 0, 0.7);
     display: -webkit-box;
     display: -moz-box;
-    display: -ms-box;
+    display: -ms-flexbox;
     display: flex;
     -webkit-box-orient: vertical;
     -moz-box-orient: vertical;
@@ -440,11 +436,12 @@ potential conflicts with other classes that may be on the page.
     background: #000;
     color: #fff;
     font-family: sans-serif;
-    z-index: 800; /* Same as toolbar */
+    z-index: 400;
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: .4em;
     padding-top: .2em;
+    padding-bottom: .2em;
     padding-left: .4em;
     font-size: 1em;
     margin: 0.1em;
@@ -494,7 +491,7 @@ potential conflicts with other classes that may be on the page.
 }
 .✈paneltable {
     position: relative;
-    width: 100%;
+    width: 96.8%;
     background-color: #000;
     color: #fff;
     padding-bottom: 0.5em;
@@ -592,47 +589,26 @@ potential conflicts with other classes that may be on the page.
     display: inline-block;
     outline: none;
     cursor: pointer;
+    position: relative;
+    border-radius: 2px;
+    font-size: 0.9em;
+    background-color: #000;
+    color: #fff;
+    border: 1px #fff solid;
     text-align: center;
     text-decoration: none;
     padding: .2em 0.5em .25em;
-    margin-right: 0.25em;
-    border-radius: .5em;
-    font-weight: bold;
-    font-size: 0.9em;
+    margin: .25em;
 }
 .✈button:hover {
     text-decoration: none;
+    cursor: pointer;
+    color: #fff;
+    background-color: #397CBD;
 }
-.✈button:active {
-    position: relative;
-}
-/* black buttons */
-.✈black {
-    color: #FFF;
-    border: solid 1px #000;
-    background: #000;
-    background: -webkit-gradient(linear, left top, left bottom, from(#222), to(#000));
-    background: -moz-linear-gradient(top,  #222,  #000);
-    background: -o-linear-gradient(top,  #222,  #000);
-    background: linear-gradient(top,  #222,  #000);
-}
-.✈black:hover {
-    background: #222;
-    background: -webkit-gradient(linear, left top, left bottom, from(#444), to(#000));
-    background: -moz-linear-gradient(top,  #444,  #000);
-    background: -o-linear-gradient(top,  #444,  #000);
-    background: linear-gradient(top,  #444,  #000);
-}
-.✈black:active {
-    color: #666;
-    background: -webkit-gradient(linear, left top, left bottom, from(#000), to(#444));
-    background: -moz-linear-gradient(top,  #000,  #444);
-    background: -o-linear-gradient(top,  #000,  #444);
-    background: linear-gradient(top,  #000,  #444);
-}
-.✈black:focus {
-    color: #FFF;
-    box-shadow: 0em 0em 1em #000;
+.✈button:focus {
+    color: #333;
+    background-color: #ccc;
 }
 .✈user_info {
     font-size: 0.8em;
@@ -651,9 +627,8 @@ potential conflicts with other classes that may be on the page.
     left: 25%;
     background-color: #000;
     z-index: 850;
-/*     border: solid 1px #fff; */
     color: #FFF;
-    border-radius: 0.5em;
+    border-radius: 0.15em;
 }
 .✈dialogcontainer h3 {
     position: relative;
@@ -666,13 +641,14 @@ potential conflicts with other classes that may be on the page.
     padding-right: 1.5em; /* Making room for the X */
     padding-left: 1.5em; /* Balancing it out so the title stays centered */
     padding-top: 0;
-    padding-bottom: .1em;
+    padding-bottom: 1px; /* To ensure the text doesn't touch the bottom */
     text-align: center;
     font-size: 0.9em;
-    border-radius: 0.25em 0.25em 0 0;
+    border-radius: 0.15em 0.15em 0 0;
+    line-height: 1.5;
 }
 .✈dialogcontainer p {
-    padding: 0.5em;
+    margin: 0;
 }
 .✈dialogcontainer textarea {
     padding: 0.2em 0.2em;
@@ -729,7 +705,8 @@ potential conflicts with other classes that may be on the page.
 }
 .✈dialog_icon {
     margin-top: 0.2em;
-    margin-right: 0.3em;
+    margin-right: 0.1em;
+    margin-left: 0.1em;
     cursor: pointer;
     opacity: .75;
     float: right;
@@ -748,6 +725,23 @@ potential conflicts with other classes that may be on the page.
     margin-right: 0.4em;
 }
 .✈dialog_close {
+}
+.✈prefsdialog {
+    background: #000;
+}
+.✈alertdialog {
+    background-image: linear-gradient(#000000,#1D3A67);
+    color: white;
+    text-align: center;
+    min-width: 25em;
+    min-height: 7em;
+}
+.✈confirmdialog {
+    background-image: linear-gradient(#000000,#1D3A67);
+    color: white;
+    text-align: center;
+    min-width: 25em;
+    min-height: 7em;
 }
 .✈draghandle {
     background-color: transparent;
@@ -888,10 +882,8 @@ potential conflicts with other classes that may be on the page.
     display: table-cell;
     max-width: 13em;
     padding-right: 0.5em;
-    background-image: -moz-linear-gradient(top, #000, rgba(120, 120, 120, 0.5));
-    background-image: -webkit-linear-gradient(top, #000, rgba(120, 120, 120, 0.5));
-    background-image: -o-linear-gradient(top, #000, rgba(120, 120, 120, 0.5));
-    background-image: linear-gradient(top,  #000, rgba(120, 120, 120, 0.5));
+    color: #fff;
+    background-image: linear-gradient(to bottom,  #000, rgba(120, 120, 120, 0.5));
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -981,7 +973,6 @@ span.f0.b0 { color: #444; background-color: transparent; } /* Black on Black */
 /* Optimize Gate One for mobile devices */
 @media only screen and (max-width: 800px) {
     .✈toolbar {
-        right: 0.25em;
         font-size: 100%;
         -webkit-transform: scale(2) translate(-40%, 25%);
         /* For whatever reason scaling doesn't work properly in Firefox Mobile but that's OK since the icons appear to be big enough to usable regardless */
@@ -996,7 +987,6 @@ span.f0.b0 { color: #444; background-color: transparent; } /* Black on Black */
         display: none; /* Not enough room for it on mobile */
     }
     .✈app_grid {
-        width: 90%;
         margin: 0 auto;
         text-align: center;
     }
@@ -1004,8 +994,6 @@ span.f0.b0 { color: #444; background-color: transparent; } /* Black on Black */
         display: inline-block;
         margin-top: 0.5em;
         border-radius: 0.5em;
-        padding-left: 0.5em;
-        padding-right: 0.5em;
         width: 6.5em;
         height: 8.5em;
     }

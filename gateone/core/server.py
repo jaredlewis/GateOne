@@ -9,8 +9,17 @@
 __version__ = '1.2.0'
 __version_info__ = (1, 2, 0)
 __license__ = "AGPLv3" # ...or proprietary (see LICENSE.txt)
+__license_info__ = {
+    "AGPLv3": {
+        "product": "gateone",
+        "users": 0, # 0 being unlimited
+        "customer": "Unsupported",
+        "version": __version__,
+        "license_format": "1.0",
+    }
+}
 __author__ = 'Dan McDougall <daniel.mcdougall@liftoffsoftware.com>'
-__commit__ = "20140408212253" # Gets replaced by git (holds the date/time)
+__commit__ = "20171125154235" # Gets replaced by git (holds the date/time)
 
 # NOTE: Docstring includes reStructuredText markup for use with Sphinx.
 __doc__ = '''\
@@ -186,204 +195,51 @@ as `--debug` is equivalent to ``"debug" = true`` in 10server.conf:
     The following values in 10server.conf are case sensitive: `true`, `false`
     and `null` (and should not be placed in quotes).
 
-Running gateone.py with the `--help` switch will print the usage information as
-well as descriptions of what each configurable option does:
+Gate One's configuration files also provide access control mechanisms.  These
+are controlled by setting the *scope* of the configuration block.  In this
+example all users that match the given IP address will be denied access to
+Gate One::
 
-.. ansi-block::
+    {
+        "user.ip_address=(127.0.0.1|10.1.1.100)": { // Replaces "*"
+            "gateone": { // These settings apply to all of Gate One
+                "blacklist": true,
+            }
+        }
+    }
 
-    \x1b[1;31mroot\x1b[0m@host\x1b[1;34m:~ $\x1b[0m gateone --help
-    Usage: /usr/local/bin/gateone [OPTIONS]
+You can define scopes however you like using user's attributes.  For example::
 
-    Options:
+    {
+        "user.email=.*@company.com": {
+            "terminal": {
+                "commands": {"extra": "/some/extra/command.sh"}
+            }
+        }
+    }
 
-    --help                           show this help information
-
-    /usr/local/lib/python2.7/dist-packages/tornado/log.py options:
-
-    --log_file_max_size              max size of log files before rollover
-                                    (default 100000000)
-    --log_file_num_backups           number of log files to keep (default 10)
-    --log_file_prefix=PATH           Path prefix for log files. Note that if you
-                                    are running multiple tornado processes,
-                                    log_file_prefix must be different for each
-                                    of them (e.g. include the port number)
-    --log_to_stderr                  Send log output to stderr (colorized if
-                                    possible). By default use stderr if
-                                    --log_file_prefix is not set and no other
-                                    logging is configured.
-    --logging=debug|info|warning|error|none
-                                    Set the Python log level. If 'none', tornado
-                                    won't touch the logging configuration.
-                                    (default info)
-
-    gateone options:
-
-    --address                        Run on the given address.  Default is all
-                                    addresses (IPv6 included).  Multiple address
-                                    can be specified using a semicolon as a
-                                    separator (e.g. '127.0.0.1;::1;10.1.1.100').
-    --api_keys                       The 'key:secret,...' API key pairs you wish
-                                    to use (only applies if using API
-                                    authentication)
-    --api_timestamp_window           How long before an API authentication object
-                                    becomes invalid.   (default 30s)
-    --auth                           Authentication method to use.  Valid options
-                                    are: none, api, google, ssl, kerberos, pam
-                                    (default none)
-    --ca_certs                       Path to a file containing any number of
-                                    concatenated CA certificates in PEM format.
-                                    They will be used to authenticate clients if
-                                    the 'ssl_auth' option is set to 'optional'
-                                    or 'required'.
-    --cache_dir                      Path where Gate One should store temporary
-                                    global files (e.g. rendered templates, CSS,
-                                    JS, etc). (default /tmp/gateone_cache)
-    --certificate                    Path to the SSL certificate.  Will be auto-
-                                    generated if none is provided. (default
-                                    /etc/gateone/ssl/certificate.pem)
-    --combine_css                    Combines all of Gate One's CSS Template
-                                    files into one big file and saves it at the
-                                    given path (e.g. gateone
-                                    --combine_css=/tmp/gateone.css).
-    --combine_css_container          Use this setting in conjunction with
-                                    --combine_css if the <div> where Gate One
-                                    lives is named something other than #gateone
-                                    (default gateone)
-    --combine_js                     Combines all of Gate One's JavaScript files
-                                    into one big file and saves it at the given
-                                    path (e.g. gateone
-                                    --combine_js=/tmp/gateone.js)
-    --command                        DEPRECATED: Use the 'commands' option in the
-                                    terminal settings.
-    --config                         DEPRECATED.  Use --settings_dir. (default
-                                    /opt/gateone/server.conf)
-    --cookie_secret                  Use the given 45-character string for cookie
-                                    encryption.
-    --debug                          Enable debugging features such as auto-
-                                    restarting when files are modified. (default
-                                    False)
-    --disable_ssl                    If enabled, Gate One will run without SSL
-                                    (generally not a good idea). (default False)
-    --embedded                       When embedding Gate One, this option is
-                                    available to templates. (default False)
-    --enable_unix_socket             Enable Unix socket support. (default False)
-    --gid                            Drop privileges and run Gate One as this
-                                    group/gid. (default 0)
-    --https_redirect                 If enabled, a separate listener will be
-                                    started on port 80 that redirects users to
-                                    the configured port using HTTPS. (default
-                                    False)
-    --js_init                        A JavaScript object (string) that will be
-                                    used when running GateOne.init() inside
-                                    index.html.  Example: --js_init="{scheme:
-                                    'white'}" would result in
-                                    GateOne.init({scheme: 'white'})
-    --keyfile                        Path to the SSL keyfile.  Will be auto-
-                                    generated if none is provided. (default
-                                    /etc/gateone/ssl/keyfile.pem)
-    --locale                         The locale (e.g. pt_PT) Gate One should use
-                                    for translations.  If not provided, will
-                                    default to $LANG (which is 'en_US' in your
-                                    current shell), or en_US if not set.
-                                    (default en_US)
-    --new_api_key                    Generate a new API key that an external
-                                    application can use to embed Gate One.
-                                    (default False)
-    --origins                        A semicolon-separated list of origins you
-                                    wish to allow access to your Gate One server
-                                    over the WebSocket.  This value must contain
-                                    the hostnames and FQDNs (e.g. foo;foo.bar;)
-                                    users will use to connect to your Gate One
-                                    server as well as the hostnames/FQDNs of any
-                                    sites that will be embedding Gate One.
-                                    Alternatively, '*' may be  specified to
-                                    allow access from anywhere. (default localho
-                                    st;127.0.0.1;enterprise.lan;enterprise;local
-                                    host;enterprise.lan;enterprise;enterprise.ex
-                                    ample.com;127.0.0.1;10.1.1.100)
-    --pam_realm                      Basic auth REALM to display when
-                                    authenticating clients.  Default: hostname.
-                                    Only relevant if PAM authentication is
-                                    enabled. (default enterprise)
-    --pam_service                    PAM service to use.  Defaults to 'login'.
-                                    Only relevant if PAM authentication is
-                                    enabled. (default login)
-    --pid_file                       Define the path to the pid file.  Default:
-                                    /var/run/gateone.pid (default
-                                    /var/run/gateone.pid)
-    --port                           Run on the given port. (default 443)
-    --session_dir                    Path to the location where session
-                                    information will be stored. (default
-                                    /tmp/gateone)
-    --session_timeout                Amount of time that a session is allowed to
-                                    idle before it is killed.  Accepts <num>X
-                                    where X could be one of s, m, h, or d for
-                                    seconds, minutes, hours, and days.  Set to
-                                    '0' to disable the ability to resume
-                                    sessions. (default 5d)
-    --settings_dir                   Path to the settings directory. (default
-                                    /etc/gateone/conf.d)
-    --ssl_auth                       Enable the use of client SSL (X.509)
-                                    certificates as a secondary authentication
-                                    factor (the configured 'auth' type will come
-                                    after SSL auth).  May be one of 'none',
-                                    'optional', or 'required'.  NOTE: Only works
-                                    if the 'ca_certs' option is configured.
-                                    (default none)
-    --sso_realm                      Kerberos REALM (aka DOMAIN) to use when
-                                    authenticating clients. Only relevant if
-                                    Kerberos authentication is enabled.
-    --sso_service                    Kerberos service (aka application) to use.
-                                    Defaults to HTTP. Only relevant if Kerberos
-                                    authentication is enabled. (default HTTP)
-    --syslog_facility                Syslog facility to use when logging to
-                                    syslog (if syslog_session_logging is
-                                    enabled).  Must be one of: auth, cron,
-                                    daemon, kern, local0, local1, local2,
-                                    local3, local4, local5, local6, local7, lpr,
-                                    mail, news, syslog, user, uucp. (default
-                                    daemon)
-    --uid                            Drop privileges and run Gate One as this
-                                    user/uid. (default 0)
-    --unix_socket_path               Path to the Unix socket (if
-                                    --enable_unix_socket=True). (default
-                                    /tmp/gateone.sock)
-    --url_prefix                     An optional prefix to place before all Gate
-                                    One URLs. e.g. '/gateone/'.  Use this if
-                                    Gate One will be running behind a reverse
-                                    proxy where you want it to be located at
-                                    some sub-URL path. (default /)
-    --user_dir                       Path to the location where user files will
-                                    be stored. (default /var/lib/gateone/users)
-    --user_logs_max_age              Maximum amount of length of time to keep any
-                                    given user log before it is removed.
-                                    (default 30d)
-    --version                        Display version information.
-
-    terminal options:
-
-    --dtach                          Wrap terminals with dtach. Allows sessions
-                                    to be resumed even if Gate One is stopped
-                                    and started (which is a sweet feature).
-                                    (default True)
-    --kill                           Kill any running Gate One terminal processes
-                                    including dtach'd processes. (default False)
-    --session_logging                If enabled, logs of user sessions will be
-                                    saved in <user_dir>/<user>/logs.  Default:
-                                    Enabled (default True)
-    --syslog_session_logging         If enabled, logs of user sessions will be
-                                    written to syslog. (default False)
-
-    x11 options:
-
-    --xorg_conf                      If provided, will use the specified
-                                    xorg.conf file when spawning instances of
-                                    Xorg. (default /etc/gateone/x11/xorg.conf)
+The above example would make it so that all users with an email address ending
+in '@company.com' will get access to the "extra" command when using the
+"terminal" application.
 
 .. note::
 
-    Some of these options (e.g. log_file_prefix) are inherent to the
-    Tornado framework.  You won't find them anywhere in gateone.py.
+    Different authentication types provide different user attributes.  For
+    example, if you have "auth" set to "google" authenticated users will have a
+    'gender' attribute.  So for example--if you wanted to be evil--you could
+    provide different settings for men and women (e.g. "user.gender=male").
+
+.. tip::
+
+    When using API authentication you can pass whatever extra user attributes
+    you want via the 'auth' object.  These attributes will be automatically
+    assigned to the user and can be used with the policy mechanism to control
+    access and settings.
+
+Running gateone.py with the `--help` switch will print the usage information as
+well as descriptions of what each configurable option does:
+
+.. command-output:: gateone --help
 
 File Paths
 ----------
@@ -482,6 +338,7 @@ import pty
 import atexit
 import ssl
 import hashlib
+import copy
 from functools import partial
 from datetime import datetime, timedelta
 try:
@@ -492,11 +349,13 @@ except ImportError: # Python 3.X
 # This is used as a way to ensure users get a friendly message about missing
 # dependencies:
 MISSING_DEPS = []
-# This is needed before other globals for certain checks:
-from gateone import GATEONE_DIR
 
 tornado_version = "" # Placeholder in case Tornado import fails below
 
+# 3rd party modules
+# Technically setuptools isn't part of Python's stdlib:
+from pkg_resources import resource_filename, resource_string, resource_exists
+from pkg_resources import resource_listdir, iter_entry_points
 # Tornado modules (yeah, we use all this stuff)
 try:
     import tornado.httpserver
@@ -514,13 +373,13 @@ try:
     from tornado import version as tornado_version
     from tornado import version_info as tornado_version_info
 except (ImportError, NameError):
-    MISSING_DEPS.append('tornado >= 3.2')
+    MISSING_DEPS.append('tornado >= 4.0')
 
-if 'tornado >= 3.2' not in MISSING_DEPS:
+if 'tornado >= 4.0' not in MISSING_DEPS:
     if tornado_version_info[0] < 3:
-        MISSING_DEPS.append('tornado >= 3.2')
+        MISSING_DEPS.append('tornado >= 4.0')
     if tornado_version_info[0] < 3 and tornado_version_info[1] < 2:
-        MISSING_DEPS.append('tornado >= 3.2')
+        MISSING_DEPS.append('tornado >= 4.0')
 
 if MISSING_DEPS:
     print("\x1b[31;1mERROR:\x1b[0m: This host is missing dependencies:")
@@ -542,13 +401,14 @@ from gateone.auth.authentication import CASAuthHandler, PAMAuthHandler
 from gateone.auth.authentication import SSLAuthHandler
 from gateone.auth.authorization import require, authenticated, policies
 from gateone.auth.authorization import applicable_policies
-from .utils import generate_session_id, mkdir_p, touch
-from .utils import gen_self_signed_ssl, get_plugins, load_modules
+from gateone.async import MultiprocessRunner, ThreadedRunner
+from .utils import generate_session_id, mkdir_p, touch, noop
+from .utils import gen_self_signed_ssl, entry_point_files
 from .utils import merge_handlers, none_fix, convert_to_timedelta, short_hash
 from .utils import json_encode, recursive_chown, ChownError, get_or_cache
 from .utils import write_pid, read_pid, remove_pid, drop_privileges
-from .utils import check_write_permissions, get_applications, valid_hostname
-from .utils import total_seconds, MEMO
+from .utils import check_write_permissions, valid_hostname
+from .utils import total_seconds, MEMO, bind
 from .configuration import apply_cli_overrides, define_options, SettingsError
 from .configuration import get_settings
 from onoff import OnOffMixin
@@ -562,24 +422,17 @@ client_log = go_logger('gateone.client')
 
 # Setup the locale functions before anything else
 locale.set_default_locale('en_US')
-user_locale = None # Replaced with the actual user locale object in __main__
+server_locale = None # Replaced with the actual server locale object in __main__
 def _(string):
     """
-    Wraps user_locale.translate so we don't get errors if loading a locale fails
-    (or we output a message before it is initialized).
+    Wraps server_locale.translate so we don't get errors if loading a locale
+    fails (or we output a message before it is initialized).
     """
-    if user_locale:
-        return user_locale.translate(string)
+    if server_locale:
+        return server_locale.translate(string)
     else:
         return string
 
-from gateone.async import MultiprocessRunner, ThreadedRunner
-try:
-    CPU_ASYNC = MultiprocessRunner()
-except NotImplementedError:
-    # System doesn't support multiprocessing (for whatever reason).
-    CPU_ASYNC = ThreadedRunner() # Fake it using threads
-IO_ASYNC = ThreadedRunner()
 
 # Globals
 CMD = None # Will be overwritten by options.command
@@ -591,42 +444,10 @@ CLEANER = None # Log and leftover session data cleaner PeriodicCallback
 FILE_CACHE = {}
 APPLICATIONS = {}
 PLUGINS = {}
-PLUGIN_WS_CMDS = {} # Gives plugins the ability to extend/enhance ApplicationWebSocket
 PLUGIN_HOOKS = {} # Gives plugins the ability to hook into various things.
-PLUGIN_AUTH_HOOKS = [] # For plugins to register functions to be called after a
-                       # user successfully authenticates
-PLUGIN_ENV_HOOKS = {} # Allows plugins to add environment variables that will be
-                      # available to all executed commands.
-# Gate One registers a handler for for terminal.py's CALLBACK_OPT special escape
-# sequence callback.  Whenever this escape sequence is encountered, Gate One
-# will parse the sequence's contained characters looking for the following
-# format:
-#   <plugin name>|<whatever>
-# The <whatever> part will be passed to any plugin matching <plugin name> if the
-# plugin has 'Escape': <function> registered in its hooks.
-PLUGIN_ESC_HANDLERS = {}
-# This is used to store plugin terminal hooks that are called when a new
-# terminal is created (so a plugin could override/attach callbacks to the
-# multiplex or terminal emulator instances).  NOTE: This is specifically for
-# adding to the terminal emulator's CALLBACK_* capability.  For modifying the
-# terminal emulator instance directly see PLUGIN_NEW_TERM_HOOKS.
-PLUGIN_TERM_HOOKS = {}
-# The NEW_TERM hooks are called at the end of ApplicationWebSocket.new_terminal()
-# with 'self' and the new instance of the terminal emulator as the only
-# arguments.  It's a more DIY/generic version of PLUGIN_TERM_HOOKS.
-PLUGIN_NEW_TERM_HOOKS = []
-# 'Command' hooks get called before a new Multiplex instance is created inside
-# of ApplicationWebSocket.new_multiplex().  They are passed the 'command' and must
-# return a string that will be used as the replacement 'command'.  This allows
-# plugin authors to modify the configured 'command' before it is executed
-PLUGIN_COMMAND_HOOKS = []
-# 'Multiplex' hooks get called at the end of ApplicationWebSocket.new_multiplex()
-# with the instance of ApplicationWebSocket and the new instance of Multiplex as
-# the only arguments, respectively.
-PLUGIN_NEW_MULTIPLEX_HOOKS = []
 
 # Secondary locale setup
-locale_dir = os.path.join(GATEONE_DIR, 'i18n')
+locale_dir = resource_filename('gateone', '/i18n')
 locale.load_gettext_translations(locale_dir, 'gateone')
 # NOTE: The locale gets set in __main__
 
@@ -821,16 +642,6 @@ def kill_all_sessions(timeout=False):
                     for callback in SESSIONS[session]["kill_session_callbacks"]:
                         callback(session)
 
-@atexit.register
-def shutdown_async():
-    """
-    Shuts down our asynchronous processes/threads.  Specifically, calls
-    ``CPU_ASYNC.shutdown()`` and ``IO_ASYNC.shutdown()``.
-    """
-    logging.debug(_("Shutting down asynchronous processes/threads..."))
-    CPU_ASYNC.shutdown(wait=False)
-    IO_ASYNC.shutdown(wait=False)
-
 def timeout_sessions():
     """
     Loops over the SESSIONS dict killing any sessions that haven't been used
@@ -868,20 +679,6 @@ def timeout_sessions():
             if SESSION_WATCHER:
                 SESSION_WATCHER.stop() # Stop ourselves
                 SESSION_WATCHER = None # So authenticate() will know to start it
-            # Reload gateone.py to free up memory (CPython can be a bit
-            # overzealous in keeping things cached).  In theory this isn't
-            # necessary due to Gate One's prodigous use of dynamic imports but
-            # in reality people will see an idle gateone.py eating up 30 megs of
-            # RAM and wonder, "WTF...  No one has connected in weeks."
-            logger.info(_("The last idle session has timed out. Reloading..."))
-            try:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            except OSError:
-                # Mac OS X versions prior to 10.6 do not support execv in
-                # a process that contains multiple threads.
-                os.spawnv(os.P_NOWAIT, sys.executable,
-                    [sys.executable] + sys.argv)
-                sys.exit(0)
         for session in list(SESSIONS.keys()):
             if "last_seen" not in SESSIONS[session]:
                 # Session is in the process of being created.  We'll check it
@@ -907,6 +704,27 @@ def timeout_sessions():
         import traceback
         traceback.print_exc(file=sys.stdout)
 
+def broadcast_message(args=sys.argv, message=""):
+    """
+    Broadcasts a given *message* to all users in Gate One.  If no message is
+    given `sys.argv` will be parsed and everything after the word 'broadcast'
+    will be broadcast.
+    """
+    if '--help' in args or len(args) < 1:
+        print("Usage: gateone broadcast 'Your message here.'")
+        sys.exit(1)
+    prefs = get_settings(options.settings_dir)
+    broadcast_file = os.path.join(options.session_dir, 'broadcast')
+    broadcast_file = prefs['*']['gateone'].get(
+        'broadcast_file', broadcast_file) # If set
+    with io.open(broadcast_file, 'w') as b:
+        if not message:
+            for message in args:
+                if isinstance(message, bytes):
+                    message = message.decode('utf-8')
+                logging.info(_("Broadcasting %s to all users") % repr(message))
+                b.write(message)
+
 # Classes
 class StaticHandler(tornado.web.StaticFileHandler):
     """
@@ -919,8 +737,18 @@ class StaticHandler(tornado.web.StaticFileHandler):
         Gate One performs its own origin checking so header-based access
         controls at the client are unnecessary.
     """
-    # This is the only function we need to override thanks to the thoughtfulness
-    # of the Tornado devs.
+    def initialize(self, path, default_filename=None, use_pkg=None):
+        """
+        Called automatically by the Tornado framework when the `StaticHandler`
+        class is instantiated; handles the usual arguments with the addition
+        of *use_pkg* which indicates that the static file should attempt to be
+        retrieved from that package via the `pkg_resources` module instead of
+        directly via the filesystem.
+        """
+        self.root = path
+        self.default_filename = default_filename
+        self.use_pkg = use_pkg
+
     def set_extra_headers(self, path):
         """
         Adds the Access-Control-Allow-Origin header to allow cross-origin
@@ -948,6 +776,25 @@ class StaticHandler(tornado.web.StaticFileHandler):
         self.set_header('Allow', 'HEAD,GET,POST,OPTIONS')
         self.set_header('Server', 'GateOne')
         self.set_header('License', __license__)
+
+    def validate_absolute_path(self, root, absolute_path):
+        """
+        An override of
+        :meth:`tornado.web.StaticFileHandler.validate_absolute_path`;
+
+        Validate and returns the given *absolute_path* using `pkg_resources`
+        if ``self.use_pkg`` is set otherwise performs a normal filesystem
+        validation.
+        """
+        # We have to generate the real absolute path in this method since the
+        # Tornado devs--for whatever reason--decided that get_absolute_path()
+        # must be a classmethod (we need access to self.use_pkg).
+        if self.use_pkg:
+            if not resource_exists(self.use_pkg, absolute_path):
+                raise tornado.web.HTTPError(404)
+            return resource_filename(self.use_pkg, absolute_path)
+        return super(
+            StaticHandler, self).validate_absolute_path(root, absolute_path)
 
 class BaseHandler(tornado.web.RequestHandler):
     """
@@ -1148,24 +995,21 @@ class MainHandler(BaseHandler):
     """
     @tornado.web.authenticated
     @tornado.web.addslash
-    # TODO: Get this auto-minifying gateone.js
     def get(self):
         # Set our server header so it doesn't say TornadoServer/<version>
         hostname = os.uname()[1]
         location = self.get_argument("location", "default")
         prefs = self.get_argument("prefs", None)
         gateone_js = "%sstatic/gateone.js" % self.settings['url_prefix']
-        minified_js_abspath = os.path.join(GATEONE_DIR, 'static')
-        minified_js_abspath = os.path.join(
-            minified_js_abspath, 'gateone.min.js')
+        minified_js_abspath = resource_filename(
+            'gateone', '/static/gateone.min.js')
         js_init = self.settings['js_init']
-        # Use the minified version if it exists
+        # Use the minified version if it exists and we're not debugging
         if options.logging.lower() != 'debug':
             if os.path.exists(minified_js_abspath):
                 gateone_js = (
                     "%sstatic/gateone.min.js" % self.settings['url_prefix'])
-        template_path = os.path.join(GATEONE_DIR, 'templates')
-        index_path = os.path.join(template_path, 'index.html')
+        index_path = resource_filename('gateone', 'templates/index.html')
         head_html = ""
         body_html = ""
         for plugin, hooks in PLUGIN_HOOKS.items():
@@ -1345,13 +1189,11 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
     file_watcher = None    # Will be replaced with a PeriodicCallback
     prefs = {} # Gets updated with every call to initialize()
     def __init__(self, application, request, **kwargs):
-        self.user = None
         self.actions = {
             'go:ping': self.pong,
             'go:log': self.log_message,
             'go:authenticate': self.authenticate,
             'go:get_theme': self.get_theme,
-            'go:get_js': self.get_js,
             'go:enumerate_themes': self.enumerate_themes,
             'go:file_request': self.file_request,
             'go:cache_cleanup': self.cache_cleanup,
@@ -1360,7 +1202,9 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             'go:list_users': self.list_server_users,
             'go:get_locations': self.get_locations,
             'go:set_location': self.set_location,
-            'go:set_locale': self.set_locale,
+            'go:set_locales': self.set_locales,
+            'go:set_dimensions': self.set_dimensions,
+            'go:license_info': self.license_info,
             'go:debug': self.debug,
         }
         # Setup some instance-specific loggers that we can later update with
@@ -1372,15 +1216,19 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         self.auth_log = go_logger('gateone.auth')
         self.client_log = go_logger('gateone.client')
         self._events = {}
+        self.user_locales = []
         self.session = None # Just a placeholder; gets set in authenticate()
         self.locations = {} # Just a placeholder; gets set in authenticate()
-        self.location = None # Just a placeholder; gets set in authenticate()
+        self.location = "default" # Just a placeholder; gets set in authenticate()
         # This is used to keep track of used API authentication signatures so
         # we can prevent replay attacks.
         self.prev_signatures = []
         self.origin_denied = True # Only allow valid origins
         self.file_cache = FILE_CACHE # So applications and plugins can reference
         self.persist = PERSIST # So applications and plugins can reference
+        if 'theme_mtimes' not in self.persist:
+            # Track theme file modification times so we can be more efficient
+            self.persist['theme_mtimes'] = {}
         self.apps = [] # Gets filled up by self.initialize()
         # The security dict stores applications' various policy functions
         self.security = {}
@@ -1390,6 +1238,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         self.pinger = None # Replaced with a PeriodicCallback inside open()
         self.timestamps = [] # Tracks/averages client latency
         self.latency = 0 # Keeps a running average
+        self.checked_origin = False
         WebSocketHandler.__init__(self, application, request, **kwargs)
 
     @classmethod
@@ -1476,6 +1325,20 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         # Reset the memoization dict so that everything using
         # applicable_policies() gets the latest & greatest settings
         MEMO.clear()
+        # Also update __license_info__ so folks don't have to restart Gate One
+        # when installing a new license:
+        licenses = prefs.get('*', {}).get('licenses', {})
+        if licenses:
+            validate_licenses(licenses)
+        else: # Ensure the default license is applied (if license removed)
+            __license_info__.clear()
+            __license_info__["AGPLv3"] = {
+                "product": "gateone",
+                "users": 0, # 0 being unlimited
+                "customer": "Unsupported",
+                "version": __version__,
+                "license_format": "1.0",
+            }
 
     @classmethod
     def broadcast_file_update(cls):
@@ -1514,7 +1377,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         with io.open(broadcast_file) as f:
             message = f.read()
         if message:
-            message = message.rstrip()
+            message = _("(Broadcast) %s") % message.rstrip()
             metadata = {'clients': []}
             for instance in cls.instances:
                 try: # Only send to users that have authenticated
@@ -1526,9 +1389,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                     'ip_address': user['ip_address']
                 }
                 metadata['clients'].append(user_info)
-            msg_log.info(
-                "Broadcast (via broadcast_file): %s" % message,
-                metadata=metadata)
+            msg_log.info("Broadcast %s" % message, metadata=metadata)
             message_dict = {'go:user_message': message}
             cls._deliver(message_dict, upn="AUTHENTICATED")
             io.open(broadcast_file, 'w').write(u'') # Empty it out
@@ -1554,12 +1415,16 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         for plugin_name, hooks in PLUGIN_HOOKS.items():
             if 'Events' in hooks:
                 for event, callback in hooks['Events'].items():
-                    self.on(event, callback)
+                    self.on(event, bind(callback, self))
+            if 'WebSocket' in hooks:
+                # Apply the plugin's WebSocket commands
+                for ws_action, func in hooks['WebSocket'].items():
+                    self.actions.update({ws_action: bind(func, self)})
         self.on("go:authenticate", self.send_extra)
         # Setup some actions to take place after the user authenticates
         # Send our plugin .js and .css files to the client
         send_plugin_static_files = partial(
-            self.send_plugin_static_files, os.path.join(GATEONE_DIR, 'plugins'))
+            self.send_plugin_static_files, 'go_plugins')
         self.on("go:authenticate", send_plugin_static_files)
         # Tell the client about any existing locations where applications may be
         # storing things like terminal instances and whatnot:
@@ -1597,15 +1462,15 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             You may have to create the 'static/extra' directory before putting
             files in there.
         """
-        extra_path = os.path.join(GATEONE_DIR, 'static', 'extra')
-        if not os.path.isdir(extra_path):
+        extra_path = resource_filename('gateone', 'static/extra')
+        if not resource_exists('gateone', '/static/extra'):
             return # Nothing to do
-        for filename in os.listdir(extra_path):
-            filepath = os.path.join(extra_path, filename)
-            if filename.endswith('.js'):
-                self.send_js(filepath)
-            elif filename.endswith('.css'):
-                self.send_css(filepath)
+        for f in resource_listdir('gateone', '/static/extra'):
+            filepath = resource_filename('gateone', '/static/extra/%s' % f)
+            if filepath.endswith('.js'):
+                self.send_js(filepath, force=True)
+            elif filepath.endswith('.css'):
+                self.send_css(filepath, force=True)
 
     def allow_draft76(self):
         """
@@ -1622,8 +1487,6 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         difference being that when API authentication is enabled the WebSocket
         will expect and perform its own auth of the client.
         """
-        if self.user:
-            return self.user
         expiration = self.settings.get('auth_timeout', "14d")
         # Need the expiration in days (which is a bit silly but whatever):
         expiration = (
@@ -1651,7 +1514,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         """
         self.write_message(message, binary=True)
 
-    def valid_origin(self, origin):
+    def check_origin(self, origin):
         """
         Checks if the given *origin* matches what's been set in Gate One's
         "origins" setting (usually in 10server.conf).  The *origin* will first
@@ -1666,8 +1529,19 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             If '*' is in the "origins" setting (anywhere) all origins will be
             allowed.
         """
+        logging.debug("check_origin(%s)" % origin)
+        self.checked_origin = True
         valid = False
-        if 'origins' in self.settings['cli_overrides']:
+        parsed_origin = urlparse(origin)
+        self.origin = parsed_origin.netloc.lower()
+        host = self.request.headers.get("Host")
+        if self.origin == host: # Reality check: Do we care?
+            # If the origin matches the "Host" header it means that the user is
+            # legitimately accessing Gate One directly.  We really only need to
+            # worry about origins if the connection is coming from some external
+            # site (e.g. to prevent spear phishing attacks; XSS and whatnot).
+            return True # Origin check successful; no need to continue
+        if 'origins' in self.settings.get('cli_overrides', ''):
             # If given on the command line, always use those origins
             valid_origins = self.settings['origins']
         else:
@@ -1676,17 +1550,19 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             valid_origins = self.prefs['*']['gateone'].get('origins', [])
         if '*' in valid_origins:
             valid = True
-        elif origin in valid_origins:
+        elif self.origin in valid_origins:
             valid = True
         if not valid:
             # Treat the list of valid origins as regular expressions
             for check_origin in valid_origins:
                 if valid_hostname(check_origin):
                     continue # Valid hostnames aren't regular expressions
-                match = re.match(check_origin, origin)
+                match = re.match(check_origin, self.origin)
                 if match:
                     valid = True
                     break
+        if not valid:
+            logging.error("Origin check failed for: %s" % origin)
         return valid
 
     def open(self):
@@ -1703,7 +1579,6 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
 
             * `self.client_id`: Unique identifier for this instance.
             * `self.base_url`: The base URL (e.g. https://foo.com/gateone/) used to access Gate One.
-            * `self.origin`: A shortcut to reference the client's origin.
 
         Triggers the `go:open` event.
 
@@ -1720,27 +1595,8 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         if hasattr(self, 'set_nodelay'):
             # New feature of Tornado 3.1 that can reduce latency:
             self.set_nodelay(True)
-        if 'Origin' in self.request.headers:
-            origin = self.request.headers['Origin']
-        elif 'Sec-Websocket-Origin' in self.request.headers: # Old version
-            origin = self.request.headers['Sec-Websocket-Origin']
-        origin = origin.lower() # hostnames are case-insensitive
-        origin = origin.split('://', 1)[1]
-        self.origin = origin
         client_address = self.request.remote_ip
-        logging.debug("open() origin: %s" % origin)
-        if not self.valid_origin(origin):
-            self.origin_denied = True
-            denied_msg = _('Access denied for origin: %s') % origin
-            auth_log.error(denied_msg)
-            self.write_message(denied_msg)
-            self.write_message(_(
-                "If you feel this is incorrect you just have to add '%s' to"
-                " the 'origins' option in your Gate One settings (e.g. "
-                "inside your 10server.conf).  See the docs for details.")
-                % origin)
-            self.close()
-            return
+        logging.debug("open() origin: %s" % self.origin)
         self.origin_denied = False
         # client_id is unique to the browser/client whereas session_id is unique
         # to the user.  It isn't used much right now but it will be useful in
@@ -1754,6 +1610,18 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         user = self.current_user
         # NOTE: self.current_user will call self.get_current_user() and set
         # self._current_user the first time it is used.
+        policy = applicable_policies("gateone", user, self.prefs)
+        blacklisted = policy.get('blacklist', False)
+        if blacklisted:
+            auth_log.info(_(
+                '{"ip_address": "%s"} Access Denied (blacklisted).'))
+            blacklist_msg = (
+                _("Your IP address (%s) has been blacklisted")
+                % client_address)
+            message = {'go:blacklisted': blacklist_msg}
+            self.write_message(message)
+            self.close() # Close the WebSocket
+            return
         metadata = {'ip_address': client_address}
         if user and 'upn' in user:
             # Update our loggers to include the user metadata
@@ -1761,7 +1629,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             # NOTE: NOT using self.auth_log() here on purpose:
             auth_log.info( # Use global auth_log so we're not redundant
                 _("WebSocket opened (%s %s) via origin %s.") % (
-                    user['upn'], client_address, origin))
+                    user['upn'], client_address, self.origin))
         else:
             # NOTE: NOT using self.auth_log() here on purpose:
             auth_log.info(_(
@@ -1782,7 +1650,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             # expire/go bad, tell it to re-auth by calling the appropriate
             # action on the other side.
             message = {'go:reauthenticate': True}
-            self.write_message(json_encode(message))
+            self.write_message(message)
             self.close() # Close the WebSocket
         # NOTE: By getting the prefs with each call to open() we make
         #       it possible to make changes inside the settings dir without
@@ -1805,10 +1673,12 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             'gateone_utils_extra.js',
             'gateone_visual_extra.js',
             'gateone_input.js',
-            'gateone_misc.js'
+            'gateone_misc.js',
+            'doT.js' # For simple HTML templates
         ]
         for js_file in additional_files:
-            self.send_js(os.path.join(GATEONE_DIR, 'static', js_file))
+            path = resource_filename('gateone', '/static/%s' % js_file)
+            self.send_js(path)
         for app in self.apps:
             if hasattr(app, 'open'):
                 app.open() # Call applications' open() functions (if any)
@@ -1850,14 +1720,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             return
         if message_obj:
             for key, value in message_obj.items():
-                if key in PLUGIN_WS_CMDS:
-                    try: # Plugins first so they can override behavior
-                        PLUGIN_WS_CMDS[key](value, tws=self)
-                        # tws==ApplicationWebSocket
-                    except (KeyError, TypeError, AttributeError) as e:
-                        self.logger.error(_(
-                            "Error running plugin WebSocket action: %s" % key))
-                else:
+                if key in self.actions:
                     try:
                         if value is None:
                             self.actions[key]()
@@ -1868,11 +1731,14 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                         import traceback
                         for frame in traceback.extract_tb(sys.exc_info()[2]):
                             fname, lineno, fn, text = frame
-                        self.logger.error(_(
-                         "Error/Unknown WebSocket action, %s: %s (%s line %s)" %
-                         (key, e, fname, lineno)))
+                        self.logger.error(
+                           _("Error in WebSocket action, %s: %s (%s line %s)") %
+                           (key, e, fname, lineno))
                         if self.settings['logging'] == 'debug':
                             traceback.print_exc(file=sys.stdout)
+                else:
+                    self.logger.error(
+                        _("Client sent unknown WebSocket action: %s") % key)
 
     def on_close(self):
         """
@@ -1884,7 +1750,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         logging.debug("on_close()")
         ApplicationWebSocket.instances.discard(self)
         user = self.current_user
-        client_address = self.request.connection.address[0]
+        client_address = self.request.remote_ip
         if user and user['session'] in SESSIONS:
             if self.client_id in SESSIONS[user['session']]['client_ids']:
                 SESSIONS[user['session']]['client_ids'].remove(self.client_id)
@@ -2050,7 +1916,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             ))
             self.write_message(json_encode(reauth))
             return False
-        upn = auth_obj['upn']
+        upn = str(auth_obj['upn'])
         timestamp = str(auth_obj['timestamp']) # str in case integer
         signature = auth_obj['signature']
         signature_method = auth_obj['signature_method']
@@ -2062,16 +1928,15 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             'HMAC-SHA512': hashlib.sha512,
         }
         if signature_method not in supported_hmacs:
-            self.auth_log.error(_(
-                    'API AUTH: Unsupported API auth '
-                    'signature method: %s' % signature_method))
+            self.auth_log.error(
+                _('API AUTH: Unsupported API auth ' 'signature method: %s')
+                % signature_method)
             self.write_message(json_encode(reauth))
             return False
         hmac_algo = supported_hmacs[signature_method]
         if api_version != "1.0":
-            self.auth_log.error(_(
-                    'API AUTH: Unsupported API version:'
-                    '%s' % api_version))
+            self.auth_log.error(
+                _('API AUTH: Unsupported API version: %s') % api_version)
             self.write_message(json_encode(reauth))
             return False
         try:
@@ -2087,6 +1952,8 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             secret, api_key, upn, timestamp, hmac_algo=hmac_algo)
         if sig_check != signature:
             self.auth_log.error(_('API AUTH: Signature check failed.'))
+            self.auth_log.error(_('Got signature: {0}, expected: {1}').format(
+                repr(signature), repr(sig_check)))
             self.write_message(json_encode(reauth))
             return False
         # Everything matches (great!) so now we do due diligence
@@ -2103,7 +1970,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 'event has been logged.')}
             self.write_message(json_encode(message))
             return
-        window = self.settings['api_timestamp_window']
+        window = self.settings.get('api_timestamp_window',timedelta(seconds=30))
         then = datetime.fromtimestamp(int(timestamp)/1000)
         time_diff = datetime.now() - then
         if time_diff > window:
@@ -2192,10 +2059,36 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
 
         Triggers the `go:authenticate` event.
         """
+        cls = ApplicationWebSocket
         logging.debug("authenticate(): %s" % settings)
         # Make sure the client is authenticated if authentication is enabled
         reauth = {'go:reauthenticate': True}
         user = self.current_user # Just a shortcut to keep lines short
+        # Apply the container/prefix settings (if present)
+        self.container = settings.get('container', self.container)
+        self.prefix = settings.get('prefix', self.prefix)
+        # Update self.base_url if a url was given
+        url = settings.get('url', None)
+        if url:
+            orig_base_url = self.base_url
+            parsed = urlparse(url)
+            port = parsed.port
+            if not port:
+                port = 443
+                if parsed.scheme == 'http':
+                    port = 80
+            self.base_url = "{protocol}://{host}:{port}{url_prefix}".format(
+                protocol=parsed.scheme,
+                host=parsed.hostname,
+                port=port,
+                url_prefix=parsed.path)
+            if orig_base_url != self.base_url:
+                self.auth_log.info(_(
+                    "Proxy in use: Client URL differs from server."))
+        self.full_url = settings.get('href', None) # In case we need all of it
+        # NOTE: The full URL is only logged via debug() because it could contain
+        #       sensitive info.
+        self.auth_log.debug(_("Client URL: {}".format(self.full_url)))
         auth_method = self.settings.get('auth', None)
         if auth_method and auth_method != 'api':
             # Regular, non-API authentication
@@ -2205,8 +2098,15 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 expiration = (
                     float(total_seconds(convert_to_timedelta(expiration)))
                     / float(86400))
-                auth_data = self.get_secure_cookie("gateone_user",
-                    value=settings['auth'], max_age_days=expiration)
+                try:
+                    auth_data = self.get_secure_cookie("gateone_user",
+                        value=settings['auth'], max_age_days=expiration)
+                except TypeError:
+                    self.auth_log.error(_(
+                        "Received strange data when performing "
+                        "authentication.  Did you forget to set 'api' in "
+                        "20authentication.conf?"))
+                    return
                 # NOTE:  This will override whatever is in the cookie.
                 # Why?  Because we'll eventually transition to not using cookies
                 if auth_data:
@@ -2302,13 +2202,6 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             self.write_message(json_encode(message))
             self.write_message(json_encode(reauth))
             return
-        try:
-            # Execute any post-authentication hooks that plugins have registered
-            if PLUGIN_AUTH_HOOKS:
-                for auth_hook in PLUGIN_AUTH_HOOKS:
-                    auth_hook(self, self.current_user, self.settings)
-        except Exception as e:
-            self.logger.error(_("Exception in registered Auth hook: %s" % e))
         # Locations are used to differentiate between different tabs/windows
         self.location = settings.get('location', 'default')
         # Update our loggers to include the user metadata
@@ -2322,33 +2215,15 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         self.auth_log = go_logger('gateone.auth', **metadata)
         self.msg_log = go_logger('gateone.message', **metadata)
         self.client_log = go_logger('gateone.client', **metadata)
-        # Apply the container/prefix settings (if present)
-        self.container = settings.get('container', self.container)
-        self.prefix = settings.get('prefix', self.prefix)
-        # Update self.base_url if a url was given
-        url = settings.get('url', None)
-        if url:
-            orig_base_url = self.base_url
-            parsed = urlparse(url)
-            port = parsed.port
-            if not port:
-                port = 443
-                if parsed.scheme == 'http':
-                    port = 80
-            self.base_url = "{protocol}://{host}:{port}{url_prefix}".format(
-                protocol=parsed.scheme,
-                host=parsed.hostname,
-                port=port,
-                url_prefix=parsed.path)
-            if orig_base_url != self.base_url:
-                self.logger.info(_(
-                    "Proxy in use: Client URL differs from server."))
         # NOTE: NOT using self.auth_log() here on purpose (this log message
         # should stay consistent for easier auditing):
-        auth_log.info(
-            _(u"User {upn} authenticated successfully via origin {origin}"
-              u" (location: {location}).").format(
-                  upn=user['upn'], origin=self.origin, location=self.location))
+        log_msg = _(
+            u"User {upn} authenticated successfully via origin {origin} "
+            u"(location {location}).").format(
+                upn=user['upn'],
+                origin=self.origin,
+                location=self.location)
+        auth_log.info(log_msg)
         # This check is to make sure there's no existing session so we don't
         # accidentally clobber it.
         if self.session not in SESSIONS:
@@ -2384,6 +2259,25 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         message = {'go:set_username': self.current_user['upn']}
         self.write_message(json_encode(message))
         self.trigger('go:authenticate')
+        # Perform a license check
+        users = ApplicationWebSocket._list_connected_users()
+        user_count = 0
+        for user in users:
+            if not user: # Broadcast/unauthenticated clients don't count
+                continue
+            user_count += 1
+        max_users = 0
+        # Figure out how many users we'll allow by adding up all the licenses
+        for license, data in __license_info__.items():
+            if data['product'] == 'gateone':
+                if data['users'] == 0: # Unlimited
+                    return # Nothing to check
+                max_users += data['users']
+        if user_count > max_users:
+            logging.error(
+                _("Licensed user limit {max_users} exceeded: {user_count} "
+                  "connected users").format(
+                    max_users=max_users, user_count=user_count))
 
     def _start_session_watcher(self, restart=False):
         """
@@ -2548,7 +2442,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 info_dict = app.info.copy() # Make a copy so we can change it
                 if info_dict['name'].lower() in enabled_applications:
                     applications.append(info_dict)
-        applications.sort()
+        applications = sorted(applications, key=lambda k: k['name'])
         message = {'go:applications': applications}
         self.write_message(json_encode(message))
 
@@ -2603,6 +2497,28 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         self.write_message(message)
         self.trigger("go:get_locations")
 
+    @require(policies('gateone'))
+    def set_dimensions(self, dimensions):
+        """
+        Attached to the `go:set_dimensions` WebSocket action.  Sets
+        ``self.dimensions`` to the given *dimensions* which should be a dict::
+
+            {
+                "width": 1366,
+                "height": 768,
+                "workspace_width": 1337,
+                "workspace_height": 768
+            }
+
+        .. note::
+
+            The idea behind this mechanism is to give applications (e.g. X11) a
+            means to know how big things are at the client so it can size things
+            correctly before sending them to the client.
+        """
+        self.dimensions = dimensions
+        self.trigger("go:set_dimensions", dimensions)
+
     def render_style(self, style_path, force=False, **kwargs):
         """
         Renders the CSS template at *style_path* using *kwargs* and returns the
@@ -2642,8 +2558,6 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                     os.remove(os.path.join(cache_dir, fname))
         return rendered_path
 
-# TODO:  Get this checking the modification time of all theme files and only
-#        rendering/sending a new theme if something has changed.
     def get_theme(self, settings):
         """
         Sends the theme stylesheets matching the properties specified in
@@ -2670,8 +2584,6 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         self.sync_log.info('Sync Theme: %s' % settings['theme'])
         use_client_cache = self.prefs['*']['gateone'].get(
             'use_client_cache', True)
-        templates_path = os.path.join(GATEONE_DIR, 'templates')
-        themes_path = os.path.join(templates_path, 'themes')
         go_url = settings['go_url'] # Used to prefix the url_prefix
         if not go_url.endswith('/'):
             go_url += '/'
@@ -2685,90 +2597,101 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             embedded=self.settings['embedded']
         )
         out_dict = {'files': []}
-        theme_filename = "%s.css" % theme
-        theme_path = os.path.join(themes_path, theme_filename)
-        template_loaders = tornado.web.RequestHandler._template_loaders
-        # This wierd little bit empties Tornado's template cache:
-        for web_template_path in template_loaders:
-            template_loaders[web_template_path].reset()
-        rendered_path = self.render_style(
-            theme_path, **template_args)
-        filename = os.path.split(rendered_path)[1]
-        theme_files = []
-        theme_files.append(rendered_path)
-        # Now enumerate all applications/plugins looking for their own
-        # implementations of this theme (must have same name).
-        plugins_dir = os.path.join(GATEONE_DIR, 'plugins')
-        # Find plugin's theme-specific CSS files
-        for plugin in os.listdir(plugins_dir):
-            plugin_dir = os.path.join(plugins_dir, plugin)
-            themes_dir = os.path.join(plugin_dir, 'templates', 'themes')
-            theme_css_file = os.path.join(themes_dir, theme_filename)
-            if not os.path.exists(theme_css_file):
-                continue
-            rendered_path = self.render_style(
-                theme_css_file, **template_args)
-            theme_files.append(rendered_path)
-        # Find application's theme-specific CSS files
-        applications_dir = os.path.join(GATEONE_DIR, 'applications')
-        for app in os.listdir(applications_dir):
-            app_dir = os.path.join(applications_dir, app)
-            themes_dir = os.path.join(app_dir, 'templates', 'themes')
-            theme_css_file = os.path.join(themes_dir, theme_filename)
-            if not os.path.exists(theme_css_file):
-                continue
-            rendered_path = self.render_style(
-                theme_css_file, **template_args)
-            theme_files.append(rendered_path)
-            # Find application plugin's theme-specific CSS files
-            plugins_dir = os.path.join(app_dir, 'plugins')
-            if not os.path.exists(plugins_dir):
-                continue
-            for plugin in os.listdir(plugins_dir):
-                plugin_dir = os.path.join(plugins_dir, plugin)
-                themes_dir = os.path.join(plugin_dir, 'templates', 'themes')
-                theme_css_file = os.path.join(themes_dir, theme_filename)
-                if not os.path.exists(theme_css_file):
-                    continue
-                rendered_path = self.render_style(
-                    theme_css_file, **template_args)
-                theme_files.append(rendered_path)
-        # Combine the theme files into one
-        filename = 'theme.css'
-        filename_hash = hashlib.md5(
-            filename.encode('utf-8')).hexdigest()[:10]
+        theme_mtimes = self.persist['theme_mtimes']
         cache_dir = self.settings['cache_dir']
-        cached_theme_path = os.path.join(cache_dir, filename)
-        new_theme_path = os.path.join(cache_dir, filename+'.new')
-        with io.open(new_theme_path, 'wb') as f:
-            for path in theme_files:
-                f.write(io.open(path, 'rb').read())
-        with open(new_theme_path, 'rb') as f:
-            new = f.read()
-        old = ''
-        if os.path.exists(cached_theme_path):
-            with open(cached_theme_path, 'rb') as f:
-                old = f.read()
-        if new != old:
-            # They're different.  Replace the old one...
+        theme_file = "%s.css" % theme
+        theme_relpath = '/templates/themes/%s' % theme_file
+        theme_path = resource_filename('gateone', theme_relpath)
+        cached_theme_path = os.path.join(cache_dir, theme_file)
+        filename_hash = hashlib.md5(theme_file.encode('utf-8')).hexdigest()[:10]
+        theme_files = []
+        theme_files.append(theme_path)
+        mtime = os.stat(theme_path).st_mtime
+        modifications = False
+        if theme_path not in theme_mtimes or mtime != theme_mtimes[theme_path]:
+            theme_mtimes[theme_path] = mtime
+            modifications = True
+        # Now enumerate all applications/plugins looking for their own
+        # implementations of this theme (must have same name)...
+        # Find plugin's theme-specific CSS files:
+        for ep in iter_entry_points(group='go_plugins'):
+            try:
+                exists = resource_exists(ep.module_name, theme_relpath)
+            except ImportError: # Plugin has an issue or has been removed
+                continue
+            if exists:
+                theme_path = resource_filename(ep.module_name, theme_relpath)
+                theme_files.append(theme_path)
+                mtime = os.stat(theme_path).st_mtime
+                if (theme_path not in theme_mtimes
+                    or mtime != theme_mtimes[theme_path]):
+                    theme_mtimes[theme_path] = mtime
+                    modifications = True
+        # Find application's theme-specific CSS files:
+        for ep in iter_entry_points(group='go_applications'):
+            try:
+                exists = resource_exists(ep.module_name, theme_relpath)
+            except ImportError: # Plugin has an issue or has been removed
+                continue
+            if exists:
+                theme_path = resource_filename(ep.module_name, theme_relpath)
+                theme_files.append(theme_path)
+                mtime = os.stat(theme_path).st_mtime
+                if (theme_path not in theme_mtimes
+                    or mtime != theme_mtimes[theme_path]):
+                    theme_mtimes[theme_path] = mtime
+                    modifications = True
+            # Find application plugin's theme-specific CSS files
+            entry_point = 'go_%s_plugins' % ep.name
+            for plugin_ep in iter_entry_points(group=entry_point):
+                try:
+                    exists = resource_exists(
+                        plugin_ep.module_name, theme_relpath)
+                except ImportError: # Plugin has an issue or has been removed
+                    continue
+                if exists:
+                    theme_path = resource_filename(
+                        plugin_ep.module_name, theme_relpath)
+                    theme_files.append(theme_path)
+                    mtime = os.stat(theme_path).st_mtime
+                    if (theme_path not in theme_mtimes
+                        or mtime != theme_mtimes[theme_path]):
+                        theme_mtimes[theme_path] = mtime
+                        modifications = True
+        # Grab the modification times for each theme file
+        if modifications or not os.path.exists(cached_theme_path):
+            logging.debug(_(
+                "Modification to theme file detected.  "
+                "Theme will be recreated."))
+            # Combine the theme files into one
+            rendered_theme_files = []
+            template_loaders = tornado.web.RequestHandler._template_loaders
+            # This wierd little bit empties Tornado's template cache:
+            for web_template_path in template_loaders:
+                template_loaders[web_template_path].reset()
+            for template_file in theme_files:
+                rendered_path = self.render_style(
+                    template_file, **template_args)
+                rendered_theme_files.append(rendered_path)
+            new_theme_path = os.path.join(cache_dir, theme_file+'.new')
+            with io.open(new_theme_path, 'wb') as f:
+                for path in rendered_theme_files:
+                    f.write(io.open(path, 'rb').read())
             os.rename(new_theme_path, cached_theme_path)
-        else:
-            # Clean up
-            os.remove(new_theme_path)
         mtime = os.stat(cached_theme_path).st_mtime
         if self.settings['debug']:
             # This makes sure that the files are always re-downloaded
             mtime = time.time()
         kind = 'css'
         out_dict['files'].append({
-            'filename': filename,
+            'filename': theme_file,
             'hash': filename_hash,
             'mtime': mtime,
             'kind': kind,
             'element_id': 'theme'
         })
         self.file_cache[filename_hash] = {
-            'filename': filename,
+            'filename': theme_file,
             'kind': kind,
             'path': cached_theme_path,
             'mtime': mtime,
@@ -2778,51 +2701,8 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             message = {'go:file_sync': out_dict}
             self.write_message(message)
         else:
-            self.file_request(filename_hash, use_client_cache=use_client_cache)
-
-    @require(authenticated())
-    def get_js(self, filename):
-        """
-        Attempts to find the specified *filename* file in Gate One's static
-        directories (GATEONE_DIR/static/ and each plugin's respective 'static'
-        dir).
-
-        In the event that a plugin's JavaScript file has the same name as a file
-        in GATEONE_DIR/static/ the plugin's copy of the file will take
-        precedence.  This is to allow plugins to override defaults.
-
-        .. note::
-
-            This will alow authenticated clients to download whatever file they
-            want that ends in .js inside of /static/ directories.
-        """
-        self.logger.info('get_js(%s)' % filename)
-        out_dict = {'result': 'Success', 'filename': filename, 'data': None}
-        js_files = {} # Key:value == 'somefile.js': '/full/path/to/somefile.js'
-        static_dir = os.path.join(GATEONE_DIR, 'static')
-        for f in os.listdir(static_dir):
-            if f.endswith('.js'):
-                js_file_path = os.path.join(static_dir, f)
-                js_files.update({f: js_file_path})
-        # Build a list of plugins
-        plugins = []
-        plugins_dir = os.path.join(GATEONE_DIR, 'plugins')
-        for f in os.listdir(plugins_dir):
-            if os.path.isdir(os.path.join(plugins_dir, f)):
-                plugins.append(f)
-        # Add each found JS file to the respective dict
-        for plugin in plugins:
-            plugin_static_path = os.path.join(plugins_dir, plugin, 'static')
-            if os.path.exists(plugin_static_path):
-                for f in os.listdir(plugin_static_path):
-                    if f.endswith('.js'):
-                        js_file_path = os.path.join(plugin_static_path, f)
-                        js_files.update({f: js_file_path})
-        if filename in list(js_files.keys()):
-            with io.open(js_files[filename], encoding='utf-8') as f:
-                out_dict['data'] = f.read()
-        message = {'go:load_js': out_dict}
-        self.write_message(message)
+            self.file_request(
+                filename_hash, use_client_cache=use_client_cache)
 
     def cache_cleanup(self, message):
         """
@@ -2910,31 +2790,19 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             self.write_message({'go:load_js': out_dict})
             return
         # Get the file info out of the file_cache so we can send it
-        element_id = self.file_cache[filename_hash].get('element_id', None)
         path = self.file_cache[filename_hash]['path']
         filename = self.file_cache[filename_hash]['filename']
         kind = self.file_cache[filename_hash]['kind']
-        mtime = self.file_cache[filename_hash]['mtime']
-        requires = self.file_cache[filename_hash].get('requires', None)
-        media = self.file_cache[filename_hash].get('media', 'screen')
+        out_dict = {'result': 'Success', 'hash': filename_hash}
+        out_dict.update(self.file_cache[filename_hash])
+        del out_dict['path'] # Don't want the client knowing this
         url_prefix = self.settings['url_prefix']
-        self.sync_log.info("Sending: {0}".format(filename))
-        out_dict = {
-            'result': 'Success',
-            'cache': use_client_cache,
-            'mtime': mtime,
-            'filename': filename,
-            'hash': filename_hash,
-            'kind': kind,
-            'element_id': element_id,
-            'requires': requires,
-            'media': media
-        }
+        self.sync_log.info(_("Sending: {0}").format(filename))
         cache_dir = self.settings['cache_dir']
         def send_file(result):
             """
             Adds our minified data to the out_dict and sends it to the
-            client.
+            client.  Also adds sourceURL comments if possible.
             """
             out_dict['data'] = result
             if kind == 'js':
@@ -2943,7 +2811,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                     application = path.split('applications/')[1].split('/')[0]
                     if 'plugins' in path:
                         static_path = path.split("%s/plugins/" % application)[1]
-                        # /terminal/ssh/static/
+                        # e.g. /terminal/ssh/static/
                         source_url = "%s%s/%s" % (
                             url_prefix, application, static_path)
                     else:
@@ -2966,10 +2834,16 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             elif kind == 'theme':
                 out_dict['theme'] = True
                 message = {'go:load_theme': out_dict}
+            elif kind == 'html':
+                out_dict['html'] = True
+                message = {'go:cache_file': out_dict}
+            else:
+                message = {'go:cache_file': out_dict}
             try:
                 self.write_message(message)
             except (WebSocketClosedError, AttributeError):
                 pass # WebSocket closed before we got a chance to send this
+        logging.debug("file_request() for: %s" % filename)
         if self.settings['debug']:
             result = get_or_cache(cache_dir, path, minify=False)
             send_file(result)
@@ -2979,8 +2853,46 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             CPU_ASYNC.call(get_or_cache, cache_dir, path,
                            minify=True, callback=send_file, memoize=False)
 
-    def send_js_or_css(self, paths_or_fileobj, kind,
-            element_id=None, requires=None, media="screen", filename=None):
+    def send_file(self, filepath, kind='misc', **metadata):
+        """
+        Tells the client to perform a sync of the file at the given *filepath*.
+        The *kind* should only be one of 'html' or 'misc' for HTML templates
+        and everything else, respectively.
+
+        Any additional keyword arguments provided via *metadata* will be
+        stored in the client-side fileCache database.
+
+        .. note:: This kind of file sending *always* uses the client-side cache.
+        """
+        if not os.path.exists(filepath):
+            self.sync_log.error(_("File does not exist: {0}").format(filepath))
+            return
+        cache_dir = self.settings['cache_dir']
+        mtime = os.stat(filepath).st_mtime
+        filename = os.path.split(filepath)[1]
+        filepath_hash = hashlib.md5(filepath.encode('utf-8')).hexdigest()[:10]
+        # Store the file info in the file_cache just in case we need to
+        # reference the original (non-rendered) path later:
+        self.file_cache[filepath_hash] = {
+            'filename': filename,
+            'kind': kind,
+            'path': filepath,
+            'mtime': mtime
+        }
+        if metadata:
+            self.file_cache[filepath_hash].update(**metadata)
+        file_dict = {
+            'filename': filename,
+            'hash': filepath_hash,
+            'mtime': mtime,
+            'kind': kind
+        }
+        out_dict = {'files': [file_dict]}
+        message = {'go:file_sync': out_dict}
+        self.write_message(message)
+
+    def send_js_or_css(self, paths_or_fileobj, kind, element_id=None,
+            requires=None, media="screen", filename=None, force=False):
         """
         Initiates a file synchronization of the given *paths_or_fileobj* with
         the client to ensure it has the latest version of the file(s).
@@ -3004,12 +2916,15 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         where you wish to preserve the original filename.  Just be aware that
         if you do this the given *filename* must be unique.
 
+        If *force* is ``True`` the file will be synchronized regardless of the
+        'send_js' or 'send_css' settings in your global Gate One settings.
+
         .. note:
 
             If the slimit module is installed it will be used to minify the JS
             before being sent to the client.
         """
-        if kind == 'js':
+        if kind == 'js' and not force:
             send_js = self.prefs['*']['gateone'].get('send_js', True)
             if not send_js:
                 if not hasattr('logged_js_message', self):
@@ -3018,7 +2933,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 # So we don't repeat this message a zillion times in the logs:
                 self.logged_js_message = True
                 return
-        elif kind == 'css':
+        elif kind == 'css' and not force:
             send_css = self.prefs['*']['gateone'].get('send_css', True)
             if not send_css:
                 if not hasattr('logged_css_message', self):
@@ -3042,7 +2957,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                     if not filename:
                         filename = os.path.split(file_obj.name)[1]
                 self.sync_log.info(
-                    "Sync check: {filename}".format(filename=filename))
+                    "Sync Check: {filename}".format(filename=filename))
                 mtime = os.stat(path).st_mtime
                 filename_hash = hashlib.md5(
                     filename.encode('utf-8')).hexdigest()[:10]
@@ -3195,15 +3110,9 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         rendered_filename = 'rendered_%s_%s' % (filepath_hash, int(mtime))
         rendered_path = os.path.join(cache_dir, rendered_filename)
         if os.path.exists(rendered_path):
-            self.send_js(rendered_path, filename=filename, **kwargs)
+            self.send_js(rendered_path, filename=filename, force=True, **kwargs)
             return
-        libwrapper = os.path.join(GATEONE_DIR, 'templates', 'libwrapper.js')
-        with io.open(js_path, 'rb') as f:
-            script['source'] = f.read()
-        template_loaders = tornado.web.RequestHandler._template_loaders
-        # This wierd little bit empties Tornado's template cache:
-        for web_template_path in template_loaders:
-            template_loaders[web_template_path].reset()
+        script['source'] = resource_string('gateone', 'templates/libwrapper.js')
         rendered = self.render_string(
             libwrapper,
             script=script,
@@ -3211,7 +3120,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         )
         with io.open(rendered_path, 'wb') as f:
             f.write(rendered)
-        self.send_js(rendered_path, filename=filename, **kwargs)
+        self.send_js(rendered_path, filename=filename, force=True, **kwargs)
         # Remove older versions of the rendered template if present
         for fname in os.listdir(cache_dir):
             if fname == rendered_filename:
@@ -3295,13 +3204,12 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 os.remove(os.path.join(cache_dir, fname))
         return rendered_path
 
-    def send_plugin_static_files(self,
-        plugins_dir, application=None, requires=None):
+    def send_plugin_static_files(self, entry_point, requires=None):
         """
-        Sends all plugin .js and .css files to the client that exist inside
-        *plugins_dir*.  Optionally, if *application* is given the policies that
-        apply to the current user for that application will be used to determine
-        whether or not a given plugin's static files will be sent.
+        Sends all plugin .js and .css files to the client that exist inside the
+        /static/ directory for given *entry_point*.  The policies that apply to
+        the current user will be used to determine whether and which static
+        files will be sent.
 
         If *requires* is given it will be passed along to `self.send_js()`.
 
@@ -3311,7 +3219,7 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             (e.g. nginx) this functionality can be completely disabled by adding
             `"send_js": false` to gateone/settings/10server.conf
         """
-        logging.debug('send_plugin_static_files(%s)' % plugins_dir)
+        logging.debug('send_plugin_static_files(%s)' % entry_point)
         send_js = self.prefs['*']['gateone'].get('send_js', True)
         if not send_js:
             if not hasattr('logged_js_message', self):
@@ -3319,42 +3227,44 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                     "send_js is false; will not send JavaScript."))
             # So we don't repeat this message a zillion times in the logs:
             self.logged_js_message = True
-            return
+        send_css = self.prefs['*']['gateone'].get('send_css', True)
+        if not send_css:
+            if not hasattr('logged_css_message', self):
+                self.logger.info(_(
+                    "send_css is false; will not send JavaScript."))
+            # So we don't repeat this message a zillion times in the logs:
+            self.logged_css_message = True
+        application = None
+        if entry_point == 'go_plugins':
+            application = 'gateone'
+        else: # Find the application that this belongs to
+            for ep in iter_entry_points(group=entry_point):
+                if ep.module_name.startswith('gateone.applications'):
+                    application = ep.module_name.split('.')[2]
+                    break
         policy = applicable_policies(application, self.current_user, self.prefs)
         globally_enabled_plugins = policy.get('enabled_plugins', [])
         # This controls the client-side plugins that will be sent
         allowed_client_side_plugins = policy.get('user_plugins', [])
         # Remove non-globally-enabled plugins from user_plugins (if set)
-        if globally_enabled_plugins and list(allowed_client_side_plugins):
-            for p in allowed_client_side_plugins:
+        if globally_enabled_plugins and allowed_client_side_plugins:
+            for p in list(allowed_client_side_plugins):
                 if p not in globally_enabled_plugins:
                     del allowed_client_side_plugins[p]
         elif globally_enabled_plugins and not allowed_client_side_plugins:
             allowed_client_side_plugins = globally_enabled_plugins
-        # Build a list of plugins
-        plugins = []
-        if not os.path.exists(plugins_dir):
-            return # Nothing to do
-        for f in os.listdir(plugins_dir):
-            if os.path.isdir(os.path.join(plugins_dir, f)):
-                if allowed_client_side_plugins:
-                    if f in allowed_client_side_plugins:
-                        plugins.append(f)
-                else:
-                    plugins.append(f)
-        # Add each found JS file to the respective dict
-        for plugin in plugins:
-            plugin_static_path = os.path.join(plugins_dir, plugin, 'static')
-            if os.path.exists(plugin_static_path):
-                static_files = os.listdir(plugin_static_path)
-                static_files.sort()
-                for f in static_files:
-                    if f.endswith('.js'):
-                        js_file_path = os.path.join(plugin_static_path, f)
-                        self.send_js(js_file_path, requires=requires)
-                    elif f.endswith('.css'):
-                        css_file_path = os.path.join(plugin_static_path, f)
-                        self.send_css(css_file_path, filename=f)
+        # Get the list of plugins
+        plugins = entry_point_files(entry_point, allowed_client_side_plugins)
+        if send_js:
+            for plugin, asset_list in plugins['js'].items():
+                for asset in asset_list:
+                    js_file_path = resource_filename(plugin, asset)
+                    self.send_js(js_file_path, requires=requires)
+        if send_css:
+            for plugin, asset_list in plugins['css'].items():
+                for asset in asset_list:
+                    css_file_path = resource_filename(plugin, asset)
+                    self.send_css(css_file_path, requires=requires)
 
 # TODO:  Add support for a setting that can control which themes are visible to users.
     def enumerate_themes(self):
@@ -3362,61 +3272,97 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         Returns a JSON-encoded object containing the installed themes and text
         color schemes.
         """
-        templates_path = os.path.join(GATEONE_DIR, 'templates')
-        themes_path = os.path.join(templates_path, 'themes')
-        # NOTE: This is temporary until this logic is moved to the terminal app:
-        colors_path = os.path.join(GATEONE_DIR,
-            'applications', 'terminal', 'templates', 'term_colors')
-        themes = os.listdir(themes_path)
-        themes = [a.replace('.css', '') for a in themes]
-        colors = os.listdir(colors_path)
-        colors = [a.replace('.css', '') for a in colors]
-        message = {'go:themes_list': {'themes': themes, 'colors': colors}}
+        themes = resource_listdir('gateone', '/templates/themes')
+        # Just in case other junk wound up in that directory:
+        themes = [a for a in themes if a.endswith('.css')]
+        themes = [a.replace('.css', '') for a in themes] # Just need the names
+        message = {'go:themes_list': {'themes': themes}}
         self.write_message(message)
 
-    @require(authenticated())
-    def set_locale(self, message):
+    def set_locales(self, locales):
         """
-        Sets the client's locale to *message['locale']*.
+        Attached to the 'go:set_locales` WebSocket action; sets
+        ``self.user_locales`` to the given *locales* and calls
+        `ApplicationWebSocket.send_js_translation` to deliver the best-match
+        JSON-encoded translation to the client (if available).
+
+        The *locales* argument may be a string or a list.  If a string,
+        ``self.user_locales`` will be set to a list with the given locale as the
+        first (and only) item.  If *locales* is a list ``self.user_locales``
+        will simply be replaced.
         """
-        self.prefs['*']['gateone']['locale'] = message['locale']
+        if isinstance(locales, str):
+            locales = [locales]
+        self.user_locales = locales
         self.send_js_translation()
 
-    def send_js_translation(self, path=None):
+    def send_js_translation(self, package='gateone', path=None, locales=None):
         """
         Sends a message to the client containing a JSON-encoded table of strings
-        that have been translated to the user's locale.
+        that have been translated to the user's locale.  The translation file
+        will be retrieved via the `pkg_resources.resource_string` function using
+        the given *package* with a default path (if not given) of,
+        '/i18n/{locale}/LC_MESSAGES/gateone_js.json'.  For example::
 
-        If a *path* is given it will be used to send the client that file.  If
-        more than one JSON translation is sent to the client the new translation
-        will be merged into the existing one.
+            self.send_js_translation(package="gateone.plugins.myplugin")
+
+        Would result in the `pkg_resources.resource_string` function being
+        called like so::
+
+            path = '/i18n/{locale}/LC_MESSAGES/gateone_js.json'.format(
+                locale=locale)
+            translation = pkg_resources.resource_string(
+                "gateone.plugins.myplugin", path)
+
+        If providing a custom *path* be sure it includes the '{locale}' portion
+        so the correct translation will be chosen.  As an example, your plugin
+        might store locales inside a 'translations' directory with each locale
+        JSON translation file named, '<locale>/myplugin.json'.  The correct
+        *path* for that would be: '/translations/{locale}/myplugin.json'
+
+        If no *locales* (may be list or string) is given the
+        ``self.user_locales`` variable will be used.
+
+        This method will attempt to find the closest locale if no direct match
+        can be found.  For example, if ``locales=="fr"`` the 'fr_FR' locale
+        would be used.  If *locales* is a list, the first matching locale will
+        be used.
 
         .. note::
 
             Translation files must be the result of a
-            `pojson /path/to/translation.po` conversion.
+            ``pojson /path/to/translation.po`` conversion.
         """
-        chosen_locale = self.prefs['*']['gateone'].get('locale', 'en_US')
-        json_translation = os.path.join(
-            GATEONE_DIR,
-            'i18n',
-            chosen_locale,
-            'LC_MESSAGES',
-            'gateone_js.json')
-        if path:
-            if os.path.exists(path):
-                with io.open(path, 'r', encoding="utf-8") as f:
-                    decoded = json_decode(f.read())
-                    message = {'go:register_translation': decoded}
-                    self.write_message(message)
-            else:
-                self.logger.error(
-                    _("Translation file, %s could not be found") % path)
-        elif os.path.exists(json_translation):
-            with io.open(json_translation, 'r', encoding="utf-8") as f:
-                decoded = json_decode(f.read())
+        from gateone.core.locale import supported_locales
+        if not locales:
+            locales = self.user_locales
+        if not locales: # Use the server's locale
+            locales = [self.prefs['*']['gateone'].get('locale')]
+        logging.debug("send_js_translation() locales: %s" % locales)
+        for locale in locales:
+            locale = locale.replace('-', '_') # Example: Converts en-US to en_US
+            if locale.lower().startswith('en'):
+                return # Gate One strings are English by default
+            if not path:
+                path = '/i18n/{locale}/LC_MESSAGES/gateone_js.json'
+            if locale not in supported_locales: # Try next-closest match
+                first_part = locale.split('_')[0] # Try the first bit
+                for l in supported_locales:
+                    if l.lower().startswith(first_part.lower()):
+                        locale = l
+                        break
+            json_translation = path.format(locale=locale)
+            if resource_exists(package, json_translation):
+                decoded = json_decode(
+                    resource_string(package, json_translation))
                 message = {'go:register_translation': decoded}
                 self.write_message(message)
+                return
+            logging.debug(_(
+                "No matching translation found for locale: %s" % locale))
+        self.logger.error(
+            _("No translation file could not be found for the given "
+              "locales: %s") % locales)
 
 # NOTE: This is not meant to be a chat application.  That'll come later :)
 #       The real purpose of send_user_message() and broadcast() are for
@@ -3568,6 +3514,21 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
                 continue
         return tuple(out)
 
+    def license_info(self):
+        """
+        Returns the contents of the `__license_info__` dict to the client as
+        a JSON-encoded message.
+        """
+        licenses = copy.deepcopy(__license_info__)
+        # Remove the signatures so the license can't be copied by clients
+        for license, data in licenses.items():
+            if 'signature' in data:
+                del data['signature']
+                del data['signature_method'] # No need to send this either
+            del data['license_format']   # Ditto
+        message = {'go:license_info': licenses}
+        self.write_message(message)
+
     @require(authenticated(), policies('gateone'))
     def debug(self):
         """
@@ -3600,9 +3561,9 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
         pprint(gc.garbage)
         debug_logger.info("Debug: gc.collect(): %s" % gc.collect())
         pprint(gc.garbage)
-        print("SESSIONS:")
+        logging.info("SESSIONS:")
         pprint(SESSIONS)
-        print("PERSIST:")
+        logging.info("PERSIST:")
         pprint(PERSIST)
         try:
             from pympler import asizeof
@@ -3617,9 +3578,9 @@ class ApplicationWebSocket(WebSocketHandler, OnOffMixin):
             if not hasattr(self, 'hp'):
                 self.hp = hpy()
                 self.hp.setrelheap() # We only want to track NEW stuff
-            print("Heap:")
+            logging.info("Heap:")
             h = self.hp.heap()
-            print(h)
+            logging.info(h)
             # Uncomment this to troubleshoot memory leaks.  If any exist this
             # loop will shine a light on them:
             #print("Heap Details (up to top 10):")
@@ -3666,16 +3627,8 @@ class GateOneApp(tornado.web.Application):
         Setup our Tornado application...  Everything in *settings* will wind up
         in the Tornado settings dict so as to be accessible under self.settings.
         """
-        global PLUGIN_WS_CMDS
-        global PLUGIN_COMMAND_HOOKS
-        global PLUGIN_ESC_HANDLERS
-        global PLUGIN_AUTH_HOOKS
-        global PLUGIN_TERM_HOOKS
-        global PLUGIN_NEW_TERM_HOOKS
-        global PLUGIN_NEW_MULTIPLEX_HOOKS
-        global PLUGIN_ENV_HOOKS
         # Base settings for our Tornado app
-        static_url = os.path.join(GATEONE_DIR, "static")
+        static_url = resource_filename('gateone', '/static')
         tornado_settings = dict(
             cookie_secret=settings['cookie_secret'],
             static_url=static_url,
@@ -3695,6 +3648,27 @@ class GateOneApp(tornado.web.Application):
                 AuthHandler = PAMAuthHandler
             elif settings['auth'] == 'google':
                 AuthHandler = GoogleAuthHandler
+                if 'google_oauth' not in tornado_settings:
+                    logging.error(_(
+                        'In order to use Google authentication you must create '
+                        'a Google project for your installation and add:\n\t'
+                        '{"google_oauth": {"key": "<YOUR CLIENT ID>", "secret":'
+                        ' "<YOUR CLIENT SECRET>"}} to your '
+                        '20authentication.conf (under the "gateone" section).'))
+                    logging.info(_(
+                        'To create a Google auth client ID and secret go to: '
+                        'https://console.developers.google.com/ and click on '
+                        '"APIs and Auth".  Then click "Create New Client ID".'
+                        ' Set the "JavaScript Origins" value to your Gate One '
+                        'server\'s address and the "Redirect URIs" to https://'
+                        '<your Gate One server FQDN>/auth'))
+                    logging.info(_(
+                        'For example, if your "JavaScript Origins" is: '
+                        'https://gateone.example.com/'))
+                    logging.info(_(
+                        'Your "Redirect URIs" would be: '
+                        'https://gateone.example.com/auth'))
+                    sys.exit(1)
             elif settings['auth'] == 'cas':
                 AuthHandler = CASAuthHandler
             elif settings['auth'] == 'ssl':
@@ -3706,9 +3680,7 @@ class GateOneApp(tornado.web.Application):
             auth_log.info(_(
                 "No authentication method configured. All users will be "
                 "ANONYMOUS"))
-        docs_path = os.path.join(GATEONE_DIR, 'docs')
-        docs_path = os.path.join(docs_path, 'build')
-        docs_path = os.path.join(docs_path, 'html')
+        docs_path = resource_filename('gateone', '/docs/build/html')
         url_prefix = settings['url_prefix']
         if not url_prefix.endswith('/'):
             # Make sure there's a trailing slash
@@ -3747,7 +3719,7 @@ class GateOneApp(tornado.web.Application):
             (r"%sstatic/(.*)" % url_prefix, StaticHandler, {"path": static_url}
         ))
         # Hook up the hooks
-        for plugin_name, hooks in PLUGIN_HOOKS.items():
+        for hooks in PLUGIN_HOOKS.values():
             if 'Web' in hooks:
                 # Apply the plugin's Web handlers
                 fixed_hooks = []
@@ -3769,101 +3741,239 @@ class GateOneApp(tornado.web.Application):
                     else:
                         fixed_hooks.append(hooks['Web'])
                 handlers.extend(fixed_hooks)
-            if 'WebSocket' in hooks:
-                # Apply the plugin's WebSocket commands
-                print("hooks['WebSocket']: %s" % hooks['WebSocket'])
-                PLUGIN_WS_CMDS.update(hooks['WebSocket'])
-            if 'Escape' in hooks:
-                # Apply the plugin's Escape handler
-                PLUGIN_ESC_HANDLERS.update({plugin_name: hooks['Escape']})
-            if 'Auth' in hooks:
-                # Apply the plugin's post-authentication functions
-                if isinstance(hooks['Auth'], (list, tuple)):
-                    PLUGIN_AUTH_HOOKS.extend(hooks['Auth'])
-                else:
-                    PLUGIN_AUTH_HOOKS.append(hooks['Auth'])
-            if 'Command' in hooks:
-                # Apply the plugin's 'Command' hooks (called by new_multiplex)
-                if isinstance(hooks['Command'], (list, tuple)):
-                    PLUGIN_COMMAND_HOOKS.extend(hooks['Command'])
-                else:
-                    PLUGIN_COMMAND_HOOKS.append(hooks['Command'])
-            if 'Multiplex' in hooks:
-                # Apply the plugin's Multiplex hooks (called by new_multiplex)
-                if isinstance(hooks['Multiplex'], (list, tuple)):
-                    PLUGIN_NEW_MULTIPLEX_HOOKS.extend(hooks['Multiplex'])
-                else:
-                    PLUGIN_NEW_MULTIPLEX_HOOKS.append(hooks['Multiplex'])
-            if 'Terminal' in hooks:
-                # Apply the plugin's Terminal hooks (called by new_terminal)
-                PLUGIN_TERM_HOOKS.update(hooks['Terminal'])
-            if 'TermInstance' in hooks:
-                # Apply the plugin's TermInstance hooks (called by new_terminal)
-                if isinstance(hooks['TermInstance'], (list, tuple)):
-                    PLUGIN_NEW_TERM_HOOKS.extend(hooks['TermInstance'])
-                else:
-                    PLUGIN_NEW_TERM_HOOKS.append(hooks['TermInstance'])
-            if 'Environment' in hooks:
-                PLUGIN_ENV_HOOKS.update(hooks['Environment'])
             if 'Init' in hooks:
                 # Call the plugin's initialization functions
                 hooks['Init'](tornado_settings)
         # Include JS-only and CSS-only plugins (for logging purposes)
-        js_plugins = [a.split(os.path.sep)[2] for a in PLUGINS['js']]
+        plugins = set(
+            PLUGINS['py'].keys() + PLUGINS['js'].keys() + PLUGINS['css'].keys())
         # NOTE: JS and CSS files are normally sent after the user authenticates
         #       via ApplicationWebSocket.send_plugin_static_files()
         # Add static handlers for all the JS plugins (primarily for source URLs)
-        for js_plugin in js_plugins:
-            js_plugin_path = os.path.join(
-                GATEONE_DIR, 'plugins', js_plugin, 'static')
-            handlers.append((
-                r"%splugins/%s/static/(.*)" % (url_prefix, js_plugin),
-                StaticHandler,
-                {"path": js_plugin_path}
+        for plugin in plugins:
+            name = plugin.split('.')[-1]
+            url_path = r"%splugins/%s/static/(.*)" % (url_prefix, name)
+            handlers.append((url_path, StaticHandler,
+                {"path": '/static/', 'use_pkg': plugin}
             ))
         # This removes duplicate handlers for the same regex, allowing plugins
         # to override defaults:
         handlers = merge_handlers(handlers)
-        css_plugins = []
-        for css_path in css_plugins:
-            name = css_path.split(os.path.sep)[-1].split('.')[0]
-            name = os.path.splitext(name)[0]
-            css_plugins.append(name)
-        plugin_list = list(set(PLUGINS['py'] + js_plugins + css_plugins))
-        plugin_list.sort() # So there's consistent ordering
-        logger.info(_("Loaded global plugins: %s") % ", ".join(plugin_list))
+        logger.info(_("Loaded global plugins: %s") % ", ".join(plugins))
         tornado.web.Application.__init__(self, handlers, **tornado_settings)
 
-def set_license():
+def validate_authobj(args=sys.argv):
     """
-    Sets the __license__ global based on what can be found in `GATEONE_DIR`.
+    Handles the 'validate_authobj' CLI command.  Takes a JSON object as the only
+    argument (must be inside single quotes) and validates the singature using
+    the same mechanism as `ApplicationWebSocket.api_auth`.  Example usage:
+
+    .. ansi-block::
+
+        \x1b[1;34muser\x1b[0m@modern-host\x1b[1;34m:~ $\x1b[0m gateone validate_authobj '{"upn": "jdoe@company.com", "signature_method": "HMAC-SHA1", "timestamp": "1409266590093", "signature": "004464e27db90180a4b87b50b00dd77420052b6d", "api_key": "NGQxNTVjZWEzMmM1NDBmNGI5MzYwNTM3ZDY0MzZiNTczY", "api_version": "1.0"}'
+        API Authentication Successful!
     """
-    license_path = os.path.join(GATEONE_DIR, '.license')
-    if os.path.exists(license_path):
-        with io.open(license_path, 'r', encoding='utf-8') as f:
-            license = f.read()
-            if license:
-                global __license__
-                __license__ = license.strip()
+    from .utils import create_signature
+    if '--help' in args or len(args) < 1:
+        print("Usage: gateone validate_authobj '<JSON auth object>'")
+        sys.exit(1)
+    def fail(*messages):
+        for msg in messages:
+            print("\x1b[1;31mError:\x1b[0m {0}".format(msg))
+        print(_("\n\x1b[1;31mAPI Authentication Failed!\x1b[0m"))
+    print(_("Checking: %s") % args[0])
+    auth_obj = args[0]
+    try:
+        auth_obj = json_decode(auth_obj)
+    except ValueError:
+        fail(_("Not valid JSON: %s") % repr(auth_obj))
+        sys.exit(2)
+    all_settings = get_settings(options.settings_dir)
+    go_settings = all_settings['*']['gateone']
+    # Validate all required values are present
+    required_keys = (
+        'api_key', 'api_version', 'signature',
+        'signature_method', 'timestamp', 'upn',
+    )
+    missing_keys = set()
+    for key in required_keys:
+        if key not in auth_obj:
+            missing_keys.add(key)
+    if missing_keys:
+        fail(_("You appear to be missing the following keys from your JSON "
+                "object: %s") % ', '.join(missing_keys))
+        sys.exit(2)
+    api_keys = go_settings.get('api_keys')
+    if not api_keys:
+        fail(_("You don't appear to have any API keys configured."),
+             _("Tip: You can create them on-demand via: gateone --new_api_key"))
+        sys.exit(2)
+    api_key = auth_obj['api_key']
+    upn = str(auth_obj['upn'])
+    timestamp = str(auth_obj['timestamp']) # str in case integer
+    signature = auth_obj['signature']
+    signature_method = auth_obj['signature_method']
+    api_version = auth_obj['api_version']
+    if api_key not in api_keys:
+        fail(_("The given API key (%s) was not found.") % api_key)
+        sys.exit(2)
+    secret = api_keys.get(api_key)
+    if not secret:
+        fail(_("The given API key (%s) has no secret!") % api_key,
+             _("Your api_keys setting is probably not in the correct format."),
+             _('The correct format is {"api_keys": {"<API key>":"<secret>"}}'),
+             _("It is recommended that you run 'gateone --new_api_key' and "
+               "modify (or at least look at) the resulting 30api_keys.conf"))
+        sys.exit(2)
+    supported_hmacs = {
+        'HMAC-SHA1': hashlib.sha1,
+        'HMAC-SHA256': hashlib.sha256,
+        'HMAC-SHA384': hashlib.sha384,
+        'HMAC-SHA512': hashlib.sha512,
+    }
+    if signature_method not in supported_hmacs:
+        fail(_('API AUTH: Unsupported API auth signature method: %s')
+            % signature_method)
+        sys.exit(2)
+    hmac_algo = supported_hmacs[signature_method]
+    if api_version != "1.0":
+        fail(_('API AUTH: Unsupported API version: %s') % api_version)
+        sys.exit(2)
+    # Everything checked out OK so we can try validating the signature now...
+    sig_check = create_signature(
+        secret, api_key, upn, timestamp,
+        hmac_algo=supported_hmacs[signature_method])
+    if sig_check != signature:
+        fail(_(
+            "The generated signature (%s) does not match what was provided in "
+            "the given auth object (%s)") % (sig_check, signature))
+        sys.exit(2)
+    print("\x1b[1;32mAPI Authentication Successful!\x1b[0m")
+
+def install_license(args=sys.argv):
+    """
+    Handles the 'install_license' CLI command.  Just installs the license at the
+    path given via `sys.argv[1]` (first argument after the 'install_license'
+    command).
+    """
+    if '--help' in args or len(args) < 1:
+        print("Usage: {0} /path/to/license.txt".format(sys.argv[0]))
+        sys.exit(1)
+    import shutil
+    # Give it a unique filename in case they're installing more than one
+    filename = 'license%s.conf' % datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    install_path = os.path.join(options.settings_dir, filename)
+    license_path = os.path.expanduser(args[0]) # In case ~
+    license_path = os.path.expandvars(license_path) # In case $HOME (or similar)
+    if os.path.exists(install_path):
+        yesno = raw_input(_(
+            "A license file is already installed.  Are you sure you want to "
+            "replace it? (y/n) "))
+        if yesno not in ('yes', 'y', 'YES', 'Y'):
+            sys.exit(1)
+    try:
+        shutil.copy(license_path, install_path)
+    except PermissionError:
+        print("Error: Could not copy license (permission denied).")
+        sys.exit(2)
+    print("{0} has been installed ({1})".format(license_path, install_path))
+    sys.exit(0)
+
+def validate_licenses(licenses):
+    """
+    Given a *licenses* dict, logs and removes any licenses that have expired or
+    have invalid signatures.  It then sets the `__license_info__` global with
+    the updated dict.  Example license dict::
+
+        {
+            "11252c41-d3cd-45b7-929b-4a3baedcc152": {
+                "product": "gateone",
+                "customer": "ACME, Inc",
+                "users": 250,
+                "expires": 1441071222,
+                "license_format": "1.0",
+                "signature": "<gobbledygook>",
+                "signature_method": "secp256k1"
+            }
+        }
+
+    .. note::
+
+        Signatures will be validated against Liftoff Software's public key.
+    """
+    # If you wish to defraud Liftoff Software (and your users) in regards to
+    # licensing just uncomment this line:
+    # return True
+    import base64
+    try:
+        import pyelliptic
+    except ImportError:
+        logging.error(_(
+            "Could not import pyelliptic which is required to validate "
+            "licenses.  Please install it:  sudo pip install pyelliptic"))
+        logging.error(_(
+            "Or you could just download it: "
+            "https://github.com/yann2192/pyelliptic"))
+        sys.exit(2)
+    pubkey = (
+        b'\x02\xca\x00 J\xd9\xbb\x16(_ d\x03\xf6\xc2\x9dc\xea]\xef\x19).5?*#.'
+        b'\xc6\x9cp\xb0G\x82\xab\x9e\x00 W\xa1t\xc1;\x08\xd78\x97\x1f\xfa\xe4'
+        b'\xc7H5\x0f+\xbcG\x8a\xb6\xf6^\xf5N\xdd\xdfm\xe0V\xaar')
+    new_licenses = copy.deepcopy(licenses)
+    ecc = pyelliptic.ECC(pubkey=pubkey, curve='secp256k1') # Same as Bitcoin
+    ignore_keys = ("signature", "signature_method", "license_format")
+    for license, data in licenses.items():
+        # Signatures are generated/validated using a concatenated string of all
+        # keys in the license's dict in lexicographical order.
+        combined = ""
+        validated = True
+        # Make a combined string to validate the signature against:
+        for key, value in sorted(data.items()):
+            if key in ignore_keys:
+                continue
+            combined += str(value)
+        now = time.time()
+        if int(data['expires']) < now:
+            logging.error(_(
+                "License for '{product}' has expired: {license}").format(
+                    product=data['product'], license=license))
+            validated = False
+        signature = base64.b64decode(data["signature"])
+        if validated and not ecc.verify(signature, combined):
+            logging.error(_("License has an invalid signature: %s") % license)
+            validated = False
+        if validated: # Show a helpful warning message about soon-to-expires
+            thirty_days_from_now = now + 2592000
+            if int(data['expires']) < thirty_days_from_now:
+                logging.warning(_(
+                    "License for '{product}' will expire in less than 30 days: "
+                    "{license}").format(
+                        product=data['product'], license=license))
+        if not validated:
+            del new_licenses[license]
+    if new_licenses:
+        logging.info("All Gate One licenses are valid and up-to-date.")
+        global __license_info__
+        __license_info__ = new_licenses
 
 def main(installed=True):
     global _
     global PLUGINS
     global APPLICATIONS
-    set_license()
-    define_options(installed=installed)
+    cli_commands = {'gateone': {}} # CLI commands provided by plugins/apps
+    define_options(installed=installed, cli_commands=cli_commands)
     # Before we do anything else we need the get the settings_dir argument (if
     # given) so we can make sure we're handling things accordingly.
     settings_dir = options.settings_dir # Set the default
     for arg in sys.argv:
         if arg.startswith('--settings_dir'):
-            settings_dir = arg.split('=', 1)[1]
+            settings_dir = arg.split('=', 1)[1].strip('"').strip("'")
     if not os.path.isdir(settings_dir) and '--help' not in sys.argv:
         # Try to create it
         try:
             mkdir_p(settings_dir)
         except:
-            logging.error(_(
+            print(_(
                "Could not find/create settings directory at %s" % settings_dir))
             sys.exit(1)
     try:
@@ -3873,8 +3983,23 @@ def main(installed=True):
         sys.exit(2)
     enabled_plugins = []
     enabled_applications = []
-    cli_commands = {} # Holds CLI commands provided by plugins/applications
+    cli_commands['gateone']['broadcast'] = {
+        'function': broadcast_message,
+        'description': _("Broadcast messages to users connected to Gate One.")
+    }
+    cli_commands['gateone']['install_license'] = {
+        'function': install_license,
+        'description': _("Install a commercial license for Gate One.")
+    }
+    cli_commands['gateone']['validate_authobj'] = {
+        'function': validate_authobj,
+        'description': _(
+            "Test API authentication by validating a JSON auth object.")
+    }
     go_settings = {}
+    log_fail_msg = _(
+        "You probably want to provide a different destination via "
+        "--log_file_prefix=/path/to/gateone.log")
     if 'gateone' in all_settings['*']:
         # The check above will fail in first-run situations
         enabled_plugins = all_settings['*']['gateone'].get(
@@ -3884,36 +4009,54 @@ def main(installed=True):
             'enabled_applications', [])
         enabled_applications = [a.lower() for a in enabled_applications]
         go_settings = all_settings['*']['gateone']
-    PLUGINS = get_plugins(os.path.join(GATEONE_DIR, 'plugins'), enabled_plugins)
-    imported = load_modules(PLUGINS['py'])
-    for plugin in imported:
+        if 'log_file_prefix' in go_settings:
+            if 'log_file_prefix' not in ' '.join(sys.argv):
+                log_path = go_settings['log_file_prefix']
+                if bytes == str: # Python 2
+                    log_path = log_path.encode('UTF-8') # Make it str
+                options.log_file_prefix = log_path
+                log_dir = os.path.dirname(go_settings['log_file_prefix'])
+                try:
+                    mkdir_p(log_dir)
+                except:
+                    print(_("Could not create log directory: %s" % log_dir))
+                    print(log_fail_msg)
+                    sys.exit(1)
+    elif 'log_file_prefix' not in ' '.join(sys.argv):
+        log_dir = os.path.dirname(options.log_file_prefix) # Try the default
         try:
-            PLUGIN_HOOKS.update({plugin.__name__: plugin.hooks})
-            if 'commands' in plugin.hooks:
-                cli_commands.update(plugin.hooks['commands'])
+            mkdir_p(log_dir)
+        except:
+            print(_("Could not create log directory: %s" % log_dir))
+            print(log_fail_msg)
+            sys.exit(1)
+    PLUGINS = entry_point_files('go_plugins', enabled_plugins)
+    for plugin, module in PLUGINS['py'].items():
+        try:
+            PLUGIN_HOOKS.update({module.__name__: module.hooks})
+            if hasattr(module, 'commands'):
+                cli_commands.update({'gateone': module.commands})
         except AttributeError:
             pass # No hooks--probably just a supporting .py file.
-    APPLICATIONS = get_applications(
-        os.path.join(GATEONE_DIR, 'applications'), enabled_applications)
-    # NOTE: load_modules() imports all the .py files in applications.  This
+    # NOTE: entry_point_files() imports all the .py files in applications.  This
     # means that applications can place calls to tornado.options.define()
     # anywhere in their .py files and they should automatically be usable by the
     # user at this point in the startup process.
-    app_modules = load_modules(APPLICATIONS)
+    app_modules = entry_point_files(
+        'go_applications', enabled_applications)['py']
     # Check if the user is running a command as opposed to passing arguments
     # so we can set the log_file_prefix to something innocuous so as to prevent
     # IOError exceptions from Tornado's parse_command_line() below...
     if [a for a in sys.argv[1:] if not a.startswith('-')]:
         options.log_file_prefix = None
+    # Make sure
     # Having parse_command_line() after loading applications in case an
     # application has additional calls to define().
     try:
         commands = tornado.options.parse_command_line()
     except IOError:
         print(_("Could not write to the log: %s") % options.log_file_prefix)
-        print(_(
-            "You probably want to provide a different destination via "
-            "--log_file_prefix=/path/to/gateone.log"))
+        print(log_fail_msg)
         sys.exit(2)
     # NOTE: Here's how settings/command line args works:
     #       * The 'options' object gets set from the arguments on the command
@@ -3940,12 +4083,15 @@ def main(installed=True):
             break
         else:
             arguments.append(arg.lstrip('-').split('=', 1)[0])
+    licenses = all_settings.get('*', {}).get('licenses', {})
+    if licenses:
+        validate_licenses(licenses)
     # TODO: Get this outputting installed plugins and versions as well
     if options.version:
         print("\x1b[1mGate One:\x1b[0m")
         print("\tVersion: %s (%s)" % (__version__, __commit__))
         print("\x1b[1mInstalled Applications:\x1b[0m")
-        for app in app_modules:
+        for name, app in app_modules.items():
             if hasattr(app, 'apps'):
                 for _app in app.apps:
                     if hasattr(_app, 'info'):
@@ -3996,7 +4142,7 @@ def main(installed=True):
         # Make sure these values get updated
         all_settings = get_settings(options.settings_dir)
         go_settings = all_settings['*']['gateone']
-    for module in app_modules:
+    for name, module in app_modules.items():
         try:
             if hasattr(module, 'apps'):
                 APPLICATIONS.extend(module.apps)
@@ -4005,7 +4151,7 @@ def main(installed=True):
             if hasattr(module, 'web_handlers'):
                 web_handlers.extend(module.web_handlers)
             if hasattr(module, 'commands'):
-                cli_commands.update(module.commands)
+                cli_commands.update({module.__name__: module.commands})
         except AttributeError:
             # No apps--probably just a supporting .py file.
             # Uncomment if you can't figure out why your app isn't loading:
@@ -4013,15 +4159,34 @@ def main(installed=True):
             #import traceback
             #traceback.print_exc(file=sys.stdout)
             pass
+    if options.help:
+        from .configuration import print_help
+        print_help(cli_commands)
+        sys.exit(2)
     if commands: # Optional CLI functionality provided by plugins/applications
         from .configuration import parse_commands
         parsed_commands = parse_commands(commands)
+        flattened_commands = {}
+        for mod, cmds in cli_commands.items():
+            for name, command_dict in cmds.items():
+                flattened_commands.update({name: command_dict['function']})
         for command, args in list(parsed_commands.items()):
-            if command not in cli_commands:
+            if command not in flattened_commands:
                 logger.warning(_("Unknown CLI command: '%s'") % (command))
             else:
-                cli_commands[command](commands[1:])
+                flattened_commands[command](commands[1:])
         sys.exit(0)
+    if __license__ == "AGPLv3":
+        agplv3_url = 'http://www.gnu.org/licenses/agpl-3.0.html'
+        logging.info("Gate One License: {0} ({1})".format(
+            __license__, agplv3_url))
+    else:
+        logging.info(
+            "Gate One License: {license} (Max Users: {users}, "
+            "Version: {version})".format(
+                license=__license_info__['license'],
+                users=__license_info__['users'],
+                version=__license_info__['license']))
     logging.info(_("Imported applications: {0}".format(
         ', '.join([a.info['name'] for a in APPLICATIONS]))))
     # Change the uid/gid strings into integers
@@ -4030,13 +4195,23 @@ def main(installed=True):
     except ValueError:
         import pwd
         # Assume it's a username and grab its uid
-        uid = pwd.getpwnam(go_settings['uid']).pw_uid
+        try:
+            uid = pwd.getpwnam(go_settings['uid']).pw_uid
+        except KeyError:
+            logger.error(_("The configured 'uid' ({0}) does not exist.").format(
+                go_settings['uid']))
+            sys.exit(1)
     try:
         gid = int(go_settings['gid'])
     except ValueError:
         import grp
         # Assume it's a group name and grab its gid
-        gid = grp.getgrnam(go_settings['gid']).gr_gid
+        try:
+            gid = grp.getgrnam(go_settings['gid']).gr_gid
+        except KeyError:
+            logger.error(_("The configured 'gid' ({0}) does not exist.").format(
+                go_settings['gid']))
+            sys.exit(1)
     if uid == 0 and os.getuid() != 0:
         # Running as non-root; set uid/gid to the current user
         logging.info(_("Running as non-root; will not drop privileges."))
@@ -4090,10 +4265,10 @@ def main(installed=True):
             logging.error(e)
             sys.exit(1)
     # Re-do the locale in case the user supplied something as --locale
-    user_locale = locale.get(go_settings['locale'])
-    _ = user_locale.translate # Also replaces our wrapper so no more .encode()
+    server_locale = locale.get(go_settings['locale'])
+    _ = server_locale.translate # Also replaces our wrapper so no more .encode()
     # Create the log dir if not already present (NOTE: Assumes we're root)
-    log_dir = os.path.split(go_settings['log_file_prefix'])[0]
+    log_dir = os.path.dirname(go_settings['log_file_prefix'])
     if options.logging.upper() != 'NONE':
         if not os.path.exists(log_dir):
             try:
@@ -4196,13 +4371,20 @@ def main(installed=True):
     # ones if not.
     if not go_settings['disable_ssl']:
         if not os.path.exists(go_settings['keyfile']):
-            ssl_base = os.path.split(go_settings['keyfile'])[0]
+            ssl_base = os.path.dirname(go_settings['keyfile'])
             if not os.path.exists(ssl_base):
-                mkdir_p(ssl_base)
+                try:
+                    mkdir_p(ssl_base)
+                except OSError as e:
+                    logging.error(_(
+                        "Gate One could not create {ssl_base} ({e}). "
+                        "Are you using the correct --settings_dir?").format(
+                            ssl_base=ssl_base, e=e))
+                    sys.exit(1)
             logging.info(_("No SSL private key found.  One will be generated."))
             gen_self_signed_ssl(path=ssl_base)
         if not os.path.exists(go_settings['certificate']):
-            ssl_base = os.path.split(go_settings['certificate'])[0]
+            ssl_base = os.path.dirname(go_settings['certificate'])
             logging.info(_("No SSL certificate found.  One will be generated."))
             gen_self_signed_ssl(path=ssl_base)
     # When logging=="debug" it will display all user's keystrokes so make sure
@@ -4220,27 +4402,41 @@ def main(installed=True):
     else:
         cert_reqs = ssl.CERT_NONE
     # Instantiate our Tornado web server
-    ssl_options = {
-        "certfile": go_settings['certificate'],
-        "keyfile": go_settings['keyfile'],
-        "cert_reqs": cert_reqs
-    }
-    ca_certs = go_settings.get('ca_certs', None)
-    if ca_certs:
-        ssl_options['ca_certs'] = ca_certs
+    proto = "https://"
     disable_ssl = go_settings.get('disable_ssl', False)
+    ca_certs = go_settings.get('ca_certs', None)
+    ssl_options = None
     if disable_ssl:
         proto = "http://"
-        ssl_options = None
-    else:
-        proto = "https://"
+    else: # Use SSL!
+        if hasattr(ssl, 'create_default_context'): # Python 2.7.9+ and 3.4+
+            ssl_options = ssl.create_default_context(
+                ssl.Purpose.CLIENT_AUTH, capath=ca_certs)
+            # SSLv2 and SSLv3 are disabled by default in Python 3.4+ so these
+            # aren't necessary (left them here for reference):
+            #ssl_options.options &= ~ssl.OP_NO_SSLv3 # Disable insecure SSLv3
+            #ssl_options.options &= ~ssl.OP_NO_SSLv2 # Disable insecure SSLv2
+        else: # Python 2.7 and Python 3 versions older than 3.4
+            if sys.version_info[0] == 2: # Python 2.7
+                ssl_options = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+                # PROTOCOL_SSLv23 supports through TLS 1.3
+            else: # Python 3.0 through 3.3
+                ssl_options = ssl.SSLContext(ssl.PROTOCOL_TLS)
+                # PROTOCOL_TLS supports all (current) versions of TLS
+            ssl_options.options |= ssl.OP_NO_SSLv2
+            ssl_options.options |= ssl.OP_NO_SSLv3
+            ssl_options.load_default_certs(ssl.Purpose.CLIENT_AUTH)
+            if ca_certs:
+                ssl_options.load_verify_locations(capath=ca_certs)
+        ssl_options.load_cert_chain(
+            go_settings['certificate'], keyfile=go_settings['keyfile'])
+        ssl_options.verify_mode = cert_reqs
     # Fill out our settings with command line args if any are missing
     for option in list(options):
         if option in non_options:
             continue # These don't belong
         if option not in go_settings:
             go_settings[option] = options[option]
-    tornado.log.enable_pretty_logging(options=options)
     https_server = tornado.httpserver.HTTPServer(
         GateOneApp(settings=go_settings, web_handlers=web_handlers),
         ssl_options=ssl_options)
@@ -4260,13 +4456,25 @@ def main(installed=True):
                 " to authenticate all users.  It will only be able to "
                 "authenticate the user that owns the gateone.py process." %
                 go_settings['pam_service']))
+    if options.configure:
+        logger.info(_("Gate One has been configured."))
+        sys.exit(0)
     try: # Start your engines!
         if go_settings.get('enable_unix_socket', False):
             https_server.add_socket(
                 tornado.netutil.bind_unix_socket(
-                    go_settings['unix_socket_path']))
-            logger.info(_("Listening on Unix socket '{socketpath}'".format(
-                socketpath=go_settings['unix_socket_path'])))
+                    go_settings['unix_socket_path'],
+                    # Tornado uses octal encoding
+                    int(go_settings['unix_socket_mode'], 8)
+                )
+            )
+            logger.info(_(
+                "Listening on Unix socket '{socketpath}' ({socketmode})"
+                .format(
+                  socketpath=go_settings['unix_socket_path'],
+                  socketmode=go_settings['unix_socket_mode']
+                )
+            ))
         address = none_fix(go_settings['address'])
         if address:
             for addr in address.split(';'):
@@ -4317,6 +4525,39 @@ def main(installed=True):
         os.close(tempfd2)
         if uid != os.getuid():
             drop_privileges(uid, gid, [tty_gid])
+        global CPU_ASYNC
+        global IO_ASYNC
+        IO_ASYNC = ThreadedRunner()
+        cores = go_settings.get('multiprocessing_workers')
+        try:
+            cores = int(cores)
+        except TypeError:
+            cores = None
+        if cores == 0:
+            logging.warning(_(
+                "Multiprocessing is disabled.  Performance will be sub-optimal."
+            ))
+            CPU_ASYNC = IO_ASYNC # Use threading instead
+        else:
+            try:
+                CPU_ASYNC = MultiprocessRunner(max_workers=cores)
+                CPU_ASYNC.call(noop, memoize=False) # Perform a realistic test
+            except NotImplementedError:
+                # System doesn't support multiprocessing (for whatever reason).
+                logging.warning(_(
+                    "Multiprocessing is not functional on this system.  "
+                    "Threading for all async calls."))
+                CPU_ASYNC = IO_ASYNC # Fall back to using threading
+        @atexit.register
+        def shutdown_async():
+            """
+            Shuts down our asynchronous processes/threads.  Specifically, calls
+            ``CPU_ASYNC.shutdown()`` and ``IO_ASYNC.shutdown()``.
+            """
+            logging.debug(_("Shutting down asynchronous processes/threads..."))
+            if CPU_ASYNC != IO_ASYNC:
+                CPU_ASYNC.shutdown(wait=False)
+            IO_ASYNC.shutdown(wait=False)
         write_pid(go_settings['pid_file'])
         pid = read_pid(go_settings['pid_file'])
         logger.info(_("Process running with pid " + pid))

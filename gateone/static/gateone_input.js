@@ -20,10 +20,10 @@ var document = window.document,
 
 I = GateOne.Base.module(GateOne, "Input", '1.2', ['Base', 'Utils']);
 // GateOne.Input.charBuffer = []; // Queue for sending characters to the server
-GateOne.Input.metaHeld = false; // Used to emulate the "meta" modifier since some browsers/platforms don't get it right.
-GateOne.Input.shortcuts = {}; // Shortcuts added via registerShortcut() wind up here.
-GateOne.Input.globalShortcuts = {}; // Global shortcuts added via registerGlobalShortcut() wind up here.
-GateOne.Input.handledGlobal = false; // Used to detect when a global shortcut needs to override a local (regular) one.
+I.metaHeld = false; // Used to emulate the "meta" modifier since some browsers/platforms don't get it right.
+I.shortcuts = {}; // Shortcuts added via registerShortcut() wind up here.
+I.globalShortcuts = {}; // Global shortcuts added via registerGlobalShortcut() wind up here.
+I.handledGlobal = false; // Used to detect when a global shortcut needs to override a local (regular) one.
 GateOne.Base.update(GateOne.Input, {
     /**:GateOne.Input
 
@@ -31,7 +31,6 @@ GateOne.Base.update(GateOne.Input, {
     */
     init: function() {
         /**:GateOne.Input.init()
-
         Attaches our global keydown/keyup events and touch events
         */
         // Attach our global shortcut handler to window
@@ -39,7 +38,7 @@ GateOne.Base.update(GateOne.Input, {
         window.addEventListener('keyup', go.Input.onGlobalKeyUp, true);
         go.node.addEventListener('keydown', go.Input.onKeyDown, true);
         go.node.addEventListener('keyup', go.Input.onKeyUp, true);
-        // Add some useful touchscreen events
+        // Add some useful touchscreen events (temporarily disabled since they aren't working in all situations yet)
 //         if ('ontouchstart' in document.documentElement) { // Touch-enabled devices only
 //             v.displayMessage("Touch screen detected:<br>Swipe left/right/up/down to switch workspaces.");
 // //             var style = window.getComputedStyle(go.node, null);
@@ -66,7 +65,20 @@ GateOne.Base.update(GateOne.Input, {
 //         }
     },
     modifiers: function(e) {
-        // Given an event object, returns an object with booleans for each modifier key (shift, alt, ctrl, meta)
+        /**:GateOne.Input.modifiers(e)
+
+        Given an event object, returns an object representing the state of all modifier keys that were held during the event:
+
+        .. code-block:: javascript
+
+            {
+                altgr: boolean,
+                shift: boolean,
+                alt:   boolean,
+                ctrl:  boolean,
+                meta:  boolean
+            }
+        */
         var out = {
             altgr: false,
             shift: false,
@@ -80,153 +92,244 @@ GateOne.Base.update(GateOne.Input, {
         if (e.ctrlKey) out.ctrl = true;
         if (e.metaKey) out.meta = true;
         // Only emulate the meta modifier if it isn't working
-        if (out.meta == false && GateOne.Input.metaHeld) {
+        if (out.meta == false && I.metaHeld) {
             // Gotta emulate it
             out.meta = true;
         }
         return out;
     },
-    specialKeys: { // Note: Copied from MochiKit.Signal
+    // TODO: See if we can better differentiate between the left and right versions of modifiers
+    specialKeysCode: { // Note: Copied from MochiKit.Signal
     // Also note:  This lookup table is expanded further on in the code
-        0: { // DOM_KEY_LOCATION_STANDARD
-            8: 'KEY_BACKSPACE',
-            9: 'KEY_TAB',
-            12: 'KEY_NUM_PAD_CLEAR', // weird, for Safari and Mac FF only
-            13: 'KEY_ENTER',
-            16: 'KEY_SHIFT',
-            17: 'KEY_CTRL',
-            18: 'KEY_ALT',
-            19: 'KEY_PAUSE',
-            20: 'KEY_CAPS_LOCK',
-            27: 'KEY_ESCAPE',
-            32: 'KEY_SPACEBAR',
-            33: 'KEY_PAGE_UP',
-            34: 'KEY_PAGE_DOWN',
-            35: 'KEY_END',
-            36: 'KEY_HOME',
-            37: 'KEY_ARROW_LEFT',
-            38: 'KEY_ARROW_UP',
-            39: 'KEY_ARROW_RIGHT',
-            40: 'KEY_ARROW_DOWN',
-            42: 'KEY_PRINT_SCREEN', // Might actually be the code for F13
-            44: 'KEY_PRINT_SCREEN',
-            45: 'KEY_INSERT',
-            46: 'KEY_DELETE',
-            59: 'KEY_SEMICOLON', // weird, for Safari and IE only
-            61: 'KEY_EQUALS_SIGN', // Strange: In Firefox this is 61, in Chrome it is 187
-            91: 'KEY_WINDOWS_LEFT',
-            92: 'KEY_WINDOWS_RIGHT',
-            93: 'KEY_SELECT',
-            106: 'KEY_NUM_PAD_ASTERISK',
-            107: 'KEY_NUM_PAD_PLUS_SIGN',
-            109: 'KEY_NUM_PAD_HYPHEN-MINUS', // Strange: Firefox has this the regular hyphen key (i.e. not the one on the num pad)
-            110: 'KEY_NUM_PAD_FULL_STOP',
-            111: 'KEY_NUM_PAD_SOLIDUS',
-            144: 'KEY_NUM_LOCK',
-            145: 'KEY_SCROLL_LOCK',
-            173: 'KEY_HYPHEN-MINUS', // No idea why Firefox uses this keycode instead of 189
-            174: 'KEY_MEDIA_VOLUME_DOWN',
-            175: 'KEY_MEDIA_VOLUME_UP',
-            177: 'KEY_MEDIA_PREVIOUS_TRACK',
-            179: 'KEY_MEDIA_PLAY_PAUSE',
-            186: 'KEY_SEMICOLON',
-            187: 'KEY_EQUALS_SIGN',
-            188: 'KEY_COMMA',
-            189: 'KEY_HYPHEN-MINUS',
-            190: 'KEY_FULL_STOP',
-            191: 'KEY_SOLIDUS',
-            192: 'KEY_GRAVE_ACCENT',
-            219: 'KEY_LEFT_SQUARE_BRACKET',
-            220: 'KEY_REVERSE_SOLIDUS',
-            221: 'KEY_RIGHT_SQUARE_BRACKET',
-            222: 'KEY_APOSTROPHE',
-            225: 'KEY_ALT_GRAPH',
-            229: 'KEY_COMPOSE' // NOTE: Firefox doesn't register a key code for the compose key!
-        // undefined: 'KEY_UNKNOWN'
+        0: { // DOM_LOCATION_STANDARD
+            8: 'BACKSPACE',
+            9: 'TAB',
+            12: 'NUM_PAD_CLEAR', // weird, for Safari and Mac FF only
+            13: 'ENTER',
+            16: 'SHIFT',
+            17: 'CTRL',
+            18: 'ALT',
+            19: 'PAUSE',
+            20: 'CAPS_LOCK',
+            27: 'ESCAPE',
+            32: 'SPACEBAR',
+            33: 'PAGE_UP',
+            34: 'PAGE_DOWN',
+            35: 'END',
+            36: 'HOME',
+            37: 'ARROW_LEFT',
+            38: 'ARROW_UP',
+            39: 'ARROW_RIGHT',
+            40: 'ARROW_DOWN',
+            42: 'PRINT_SCREEN', // Might actually be the code for F13
+            44: 'PRINT_SCREEN',
+            45: 'INSERT',
+            46: 'DELETE',
+            59: 'SEMICOLON', // weird, for Safari and IE only
+            61: 'EQUALS_SIGN', // Strange: In Firefox this is 61, in Chrome it is 187
+            91: 'WINDOWS_LEFT',
+            92: 'WINDOWS_RIGHT',
+            93: 'SELECT',
+            106: 'NUM_PAD_ASTERISK',
+            107: 'NUM_PAD_PLUS_SIGN',
+            109: 'NUM_PAD_HYPHEN-MINUS', // Strange: Firefox has this the regular hyphen key (i.e. not the one on the num pad)
+            110: 'NUM_PAD_FULL_STOP',
+            111: 'NUM_PAD_SOLIDUS',
+            123: 'LEFT_CURLY_BRACKET',
+            125: 'RIGHT_CURLY_BRACKET',
+            144: 'NUM_LOCK',
+            145: 'SCROLL_LOCK',
+            173: 'HYPHEN-MINUS', // No idea why Firefox uses this keycode instead of 189
+            174: 'MEDIA_VOLUME_DOWN',
+            175: 'MEDIA_VOLUME_UP',
+            177: 'MEDIA_PREVIOUS_TRACK',
+            179: 'MEDIA_PLAY_PAUSE',
+            186: 'SEMICOLON',
+            187: 'EQUALS_SIGN',
+            188: 'COMMA',
+            189: 'HYPHEN-MINUS',
+            190: 'FULL_STOP',
+            191: 'SOLIDUS',
+            192: 'GRAVE_ACCENT',
+            219: 'LEFT_SQUARE_BRACKET',
+            220: 'REVERSE_SOLIDUS',
+            221: 'RIGHT_SQUARE_BRACKET',
+            222: 'APOSTROPHE',
+            225: 'ALT_GRAPH',
+            229: 'COMPOSE', // NOTE: Firefox doesn't register a key code for the compose key!
+        // undefined: 'UNKNOWN'
         },
         // Sigh, I wish browsers actually implemented these two:
-//         1: {}, // DOM_KEY_LOCATION_LEFT
-//         2: {}, // DOM_KEY_LOCATION_RIGHT
-        3: { // DOM_KEY_LOCATION_NUMPAD
-            12: 'KEY_NUM_PAD_CLEAR',
-            13: 'KEY_NUM_PAD_ENTER',
-            33: 'KEY_NUM_PAD_PAGE_UP',
-            34: 'KEY_NUM_PAD_PAGE_DOWN',
-            35: 'KEY_NUM_PAD_END',
-            36: 'KEY_NUM_PAD_HOME',
-            37: 'KEY_NUM_PAD_LEFT',
-            38: 'KEY_NUM_PAD_UP',
-            39: 'KEY_NUM_PAD_RIGHT',
-            40: 'KEY_NUM_PAD_DOWN',
-            45: 'KEY_NUM_PAD_INSERT',
-            46: 'KEY_NUM_PAD_DECIMAL',
-            96: 'KEY_NUM_PAD_0',
-            97: 'KEY_NUM_PAD_1',
-            98: 'KEY_NUM_PAD_2',
-            99: 'KEY_NUM_PAD_3',
-            100: 'KEY_NUM_PAD_4',
-            101: 'KEY_NUM_PAD_5',
-            102: 'KEY_NUM_PAD_6',
-            103: 'KEY_NUM_PAD_7',
-            104: 'KEY_NUM_PAD_8',
-            105: 'KEY_NUM_PAD_9',
-            109: 'KEY_NUM_PAD_HYPHEN-MINUS',
-            106: 'KEY_NUM_PAD_ASTERISK',
-            111: 'KEY_NUM_PAD_SLASH',
+//         1: {}, // DOM_LOCATION_LEFT
+//         2: {}, // DOM_LOCATION_RIGHT
+        3: { // DOM_LOCATION_NUMPAD
+            12: 'NUM_PAD_CLEAR',
+            13: 'NUM_PAD_ENTER',
+            33: 'NUM_PAD_PAGE_UP',
+            34: 'NUM_PAD_PAGE_DOWN',
+            35: 'NUM_PAD_END',
+            36: 'NUM_PAD_HOME',
+            37: 'NUM_PAD_LEFT',
+            38: 'NUM_PAD_UP',
+            39: 'NUM_PAD_RIGHT',
+            40: 'NUM_PAD_DOWN',
+            45: 'NUM_PAD_INSERT',
+            46: 'NUM_PAD_DECIMAL',
+            96: 'NUM_PAD_0',
+            97: 'NUM_PAD_1',
+            98: 'NUM_PAD_2',
+            99: 'NUM_PAD_3',
+            100: 'NUM_PAD_4',
+            101: 'NUM_PAD_5',
+            102: 'NUM_PAD_6',
+            103: 'NUM_PAD_7',
+            104: 'NUM_PAD_8',
+            105: 'NUM_PAD_9',
+            109: 'NUM_PAD_HYPHEN-MINUS',
+            106: 'NUM_PAD_ASTERISK',
+            111: 'NUM_PAD_SLASH',
         }
     },
-    specialMacKeys: { // Note: Copied from MochiKit.Signal
-        3: 'KEY_ENTER',
-        63289: 'KEY_NUM_PAD_CLEAR',
-        63276: 'KEY_PAGE_UP',
-        63277: 'KEY_PAGE_DOWN',
-        63275: 'KEY_END',
-        63273: 'KEY_HOME',
-        63234: 'KEY_ARROW_LEFT',
-        63232: 'KEY_ARROW_UP',
-        63235: 'KEY_ARROW_RIGHT',
-        63233: 'KEY_ARROW_DOWN',
-        63302: 'KEY_INSERT',
-        63272: 'KEY_DELETE'
+    specialKeys: {
+        0: { // DOM_LOCATION_STANDARD
+            'Backspace': 'BACKSPACE',
+            'Tab': 'TAB',
+            'Enter': 'ENTER',
+            'ShiftLeft': 'SHIFT',
+            'ShiftRight': 'SHIFT',
+            'Shift': 'SHIFT',
+            'ControlLeft': 'CTRL',
+            'ControlRight': 'CTRL',
+            'Control': 'CTRL',
+            'AltLeft': 'ALT',
+            'AltRight': 'ALT',
+            'Alt': 'ALT',
+            'Pause': 'PAUSE',
+            'CapsLock': 'CAPS_LOCK',
+            'Escape': 'ESCAPE',
+            'Space': 'SPACEBAR',
+            'PageUp': 'PAGE_UP',
+            'PageDown': 'PAGE_DOWN',
+            'End': 'END',
+            'Home': 'HOME',
+            'ArrowLeft': 'ARROW_LEFT',
+            'Left': 'ARROW_LEFT',
+            'ArrowUp': 'ARROW_UP',
+            'Up': 'ARROW_UP',
+            'ArrowRight': 'ARROW_RIGHT',
+            'Right': 'ARROW_RIGHT',
+            'ArrowDown': 'ARROW_DOWN',
+            'Down' : 'ARROW_DOWN',
+            'PrintScreen': 'PRINT_SCREEN',
+            'Insert': 'INSERT',
+            'Delete': 'DELETE',
+            'Semicolon': 'SEMICOLON', // weird, for Safari and IE only
+            'Equal': 'EQUALS_SIGN', // Strange: In Firefox this is 61, in Chrome it is 187
+            'OSLeft': 'WINDOWS_LEFT',
+            'OSRight': 'WINDOWS_RIGHT',
+            'OS': 'WINDOWS_LEFT',
+            'Select': 'SELECT',
+            'NumLock': 'NUM_LOCK',
+            'ScrollLock': 'SCROLL_LOCK',
+            'VolumeDown': 'MEDIA_VOLUME_DOWN',
+            'VolumeUp': 'MEDIA_VOLUME_UP',
+            'MediaTrackPrevious': 'MEDIA_PREVIOUS_TRACK',
+            'MediaPlayPause': 'MEDIA_PLAY_PAUSE',
+            'Comma': 'COMMA',
+            'Subtract': 'HYPHEN-MINUS',
+            'Period': 'FULL_STOP',
+            'Slash': 'SOLIDUS',
+            'Backquote': 'GRAVE_ACCENT',
+            'BracketLeft': 'LEFT_SQUARE_BRACKET',
+            // For some reason Firefox doesn't provide special names for the brackets:
+            '[': 'LEFT_SQUARE_BRACKET',
+            'Backslash': 'REVERSE_SOLIDUS',
+            'BracketRight': 'RIGHT_SQUARE_BRACKET',
+            ']': 'RIGHT_SQUARE_BRACKET',
+            'Quote': 'APOSTROPHE',
+            'AltGraph': 'ALT_GRAPH',
+            'Compose': 'COMPOSE'
+        },
+        // Sigh, I wish browsers actually implemented these two:
+        3: { // DOM_LOCATION_NUMPAD
+            'NumpadMultiply': 'NUM_PAD_ASTERISK',
+            'NumpadAdd': 'NUM_PAD_PLUS_SIGN',
+            'NumpadSubtract': 'NUM_PAD_HYPHEN-MINUS', // Strange: Firefox has this the regular hyphen key (i.e. not the one on the num pad)
+            'NumpadDecimal': 'NUM_PAD_FULL_STOP',
+            'Slash': 'NUM_PAD_SOLIDUS',
+        }
     },
+    specialMacKeysCode: { // Note: Copied from MochiKit.Signal
+        3: 'ENTER',
+        63289: 'NUM_PAD_CLEAR',
+        63276: 'PAGE_UP',
+        63277: 'PAGE_DOWN',
+        63275: 'END',
+        63273: 'HOME',
+        63234: 'ARROW_LEFT',
+        63232: 'ARROW_UP',
+        63235: 'ARROW_RIGHT',
+        63233: 'ARROW_DOWN',
+        63302: 'INSERT',
+        63272: 'DELETE'
+    },
+    // TODO: Get this returning the new KeyboardEvent.code instead of the charCode (for key.code)
     key: function(e) {
-        // Given an event object, returns an object:
-        // {
-        //    type: <event type>, // Just preserves it
-        //    code: <the key code>,
-        //    string: 'KEY_<key string>'
-        // }
-        var goIn = GateOne.Input,
-            specialKeys,
+        /**:GateOne.Input.key(e)
+
+        Given an event object, returns an object:
+
+        .. code-block:: javascript
+
+            {
+                type: e.type, // Just preserves it
+                location: e.location, // Also preserves it
+                code: key_code, // Tries event.code before falling back to event.keyCode
+                string: '<key string>'
+            }
+        */
+        var specialKeys,
             k = {
                 type: e.type,
                 location: (e.location || e.keyLocation || 0)
             };
-        if (e.type == 'keydown' || e.type == 'keyup') {
-            k.code = e.keyCode;
-            // Try the location-specific key string first, then the default location (0), then the Mac version, then finally give up
-            specialKeys = goIn.specialKeys[k.location] || goIn.specialKeys[0];
-            k.string = specialKeys[k.code] || goIn.specialMacKeys[k.code] || 'KEY_UNKNOWN';
+        specialKeys = I.specialKeys[k.location] || I.specialKeys[0];
+        if (e.key) { // DOM3 FTW!  This works regardless of the event type.  How awesome is that?!?  :)
+            k.code = e.key.charCodeAt(0);
+            k.string = specialKeys[e.key] || e.key || 'UNKNOWN';
             return k;
-        } else if (typeof(e.charCode) != 'undefined' && e.charCode !== 0 && !goIn.specialMacKeys[e.charCode]) {
+        }
+        specialKeys = I.specialKeysCode[k.location] || I.specialKeysCode[0];
+        if (e.type == 'keydown' || e.type == 'keyup') {
+            k.code = e.charCode || e.keyCode;
+            // Try the location-specific key string first, then the default location (0), then the Mac version, then finally give up
+            k.string = specialKeys[k.code] || I.specialMacKeysCode[k.code] || String.fromCharCode(k.code) || 'UNKNOWN';
+            return k;
+        } else if (typeof(e.charCode) != 'undefined' && e.charCode !== 0 && !I.specialMacKeysCode[e.charCode]) {
             k.code = e.charCode;
             k.string = String.fromCharCode(k.code);
             return k;
         } else if (e.keyCode && typeof(e.charCode) == 'undefined') { // IE
-            k.code = e.keyCode;
+            k.code = e.code || e.keyCode;
             k.string = String.fromCharCode(k.code);
             return k;
         }
         return undefined;
     },
     mouse: function(e) {
-        // Given an event object, returns an object:
-        // {
-        //    type:   <event type>, // Just preserves it
-        //    left:   <true/false>,
-        //    right:  <true/false>,
-        //    middle: <true/false>,
-        // }
+        /**:GateOne.Input.mouse(e)
+
+        Given an event object, returns an object:
+
+        .. code-block:: javascript
+
+            {
+                type:   e.type, // Just preserves it
+                left:   boolean,
+                right:  boolean,
+                middle: boolean,
+            }
+        */
         // Note: Based on functions from MochiKit.Signal
         var m = { type: e.type, button: {} };
         if (e.type != 'mousemove' && e.type != 'mousewheel') {
@@ -256,20 +359,19 @@ GateOne.Base.update(GateOne.Input, {
     onKeyUp: function(e) {
         /**:GateOne.Input.onKeyUp(e)
 
-        Used in conjunction with GateOne.Input.modifiers() and GateOne.Input.onKeyDown() to emulate the meta key modifier using KEY_WINDOWS_LEFT and KEY_WINDOWS_RIGHT since "meta" doesn't work as an actual modifier on some browsers/platforms.
+        Used in conjunction with GateOne.Input.modifiers() and GateOne.Input.onKeyDown() to emulate the meta key modifier using WINDOWS_LEFT and WINDOWS_RIGHT since "meta" doesn't work as an actual modifier on some browsers/platforms.
         */
-        var goIn = go.Input,
-            key = goIn.key(e),
-            modifiers = goIn.modifiers(e);
-        logDebug('onKeyUp()');
-        if (key.string == 'KEY_WINDOWS_LEFT' || key.string == 'KEY_WINDOWS_RIGHT') {
-            goIn.metaHeld = false;
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
+        logDebug('onKeyUp()', e);
+        if (key.string == 'WINDOWS_LEFT' || key.string == 'WINDOWS_RIGHT') {
+            I.metaHeld = false;
         }
-        if (goIn.handledShortcut) {
+        if (I.handledShortcut) {
             // This key has already been taken care of
-            goIn.handledShortcut = false;
+            I.handledShortcut = false;
         }
-        E.trigger("go:keyup:" + goIn.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
+        E.trigger("go:keyup:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
     },
     onKeyDown: function(e) {
         /**:GateOne.Input.onKeyDown(e)
@@ -279,18 +381,17 @@ GateOne.Base.update(GateOne.Input, {
         Triggers the `go:keydown` event with keystroke appended to the end of the event (in lower case).
         */
         // NOTE:  In order for e.preventDefault() to work in canceling browser keystrokes like Ctrl-C it must be called before keyup.
-        var goIn = go.Input,
-            container = go.node,
-            key = goIn.key(e),
-            modifiers = goIn.modifiers(e);
+        var container = go.node,
+            key = I.key(e),
+            modifiers = I.modifiers(e);
         logDebug("onKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
-        E.trigger("go:keydown:" + goIn.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
-        if (goIn.handledGlobal) {
+        E.trigger("go:keydown:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
+        if (I.handledGlobal) {
             // Global shortcuts take precedence
             return;
         }
         if (container) { // This display check prevents an exception when someone presses a key before the document has been fully loaded
-            goIn.execKeystroke(e);
+            I.execKeystroke(e);
         }
     },
     onGlobalKeyUp: function(e) {
@@ -298,23 +399,21 @@ GateOne.Base.update(GateOne.Input, {
 
         This gets attached to the 'keyup' event on `document.body`.  Triggers the `global:keyup` event with keystroke appended to the end of the event (in lower case).
         */
-        var goIn = go.Input,
-            key = goIn.key(e),
-            modifiers = goIn.modifiers(e);
-        logDebug('onGlobalKeyUp()');
-        E.trigger("global:keyup:" + goIn.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
+        logDebug('onGlobalKeyUp()', key, modifiers);
+        E.trigger("global:keyup:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
     },
     onGlobalKeyDown: function(e) {
         /**:GateOne.Input.onGlobalKeyDown(e)
 
         Handles global keystroke events (i.e. those attached to the window object).
         */
-        var goIn = go.Input,
-            key = goIn.key(e),
-            modifiers = goIn.modifiers(e);
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
         logDebug("onGlobalKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
-        E.trigger("global:keydown:" + goIn.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
-        goIn.execKeystroke(e, true);
+        E.trigger("global:keydown:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
+        I.execKeystroke(e, true);
     },
     execKeystroke: function(e, /*opt*/global) {
         /**:GateOne.Input.execKeystroke(e, global)
@@ -322,28 +421,27 @@ GateOne.Base.update(GateOne.Input, {
         Executes the keystroke or shortcut associated with the given keydown event (*e*).  If *global* is true, will only execute global shortcuts (no regular keystroke overrides).
         */
         logDebug('execKeystroke(global=='+global+')');
-        var goIn = go.Input,
-            key = goIn.key(e),
-            modifiers = goIn.modifiers(e),
-            shortcuts = goIn.shortcuts;
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
+            shortcuts = I.shortcuts;
         if (global) {
-            shortcuts = goIn.globalShortcuts;
+            shortcuts = I.globalShortcuts;
         }
-        if (key.string == 'KEY_WINDOWS_LEFT' || key.string == 'KEY_WINDOWS_RIGHT') {
-            goIn.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
+        if (key.string == 'WINDOWS_LEFT' || key.string == 'WINDOWS_RIGHT') {
+            I.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
             setTimeout(function() {
                 // Reset it after three seconds regardless of whether or not we get a keyup event.
                 // This is necessary because when Macs execute meta-tab (Cmnd-tab) the keyup event never fires and Gate One can get stuck thinking meta is down.
-                goIn.metaHeld = false;
+                I.metaHeld = false;
             }, 3000);
             return true; // Save some CPU
         }
-        if (goIn.composition) {
+        if (I.composition) {
             return true; // Let the IME handle this keystroke
         }
         if (modifiers.shift) {
             // Reset go.Utils.scrollTopTemp if something other than PgUp or PgDown was pressed
-            if (key.string != 'KEY_PAGE_UP' && key.string != 'KEY_PAGE_DOWN') {
+            if (key.string != 'PAGE_UP' && key.string != 'PAGE_DOWN') {
                 delete go.Utils.scrollTopTemp;
             }
         } else {
@@ -399,18 +497,18 @@ GateOne.Base.update(GateOne.Input, {
                             }
                         }
                         if (conditionFailure) {
-                            logDebug("Condition not met for " + goIn.humanReadableShortcut(shortcut));
+                            logDebug("Condition not met for " + I.humanReadableShortcut(shortcut));
                         } else {
                             if (typeof(shortcut['action']) == 'string') {
                                 eval(shortcut['action']);
                             } else if (typeof(shortcut['action']) == 'function') {
                                 shortcut['action'](e); // Pass it the event
                             }
-                            goIn.handledShortcut = true;
-                            goIn.handledGlobal = true;
+                            I.handledShortcut = true;
+                            I.handledGlobal = true;
                             matched = true;
                             setTimeout(function() {
-                                goIn.handledGlobal = false;
+                                I.handledGlobal = false;
                             }, 250);
                         }
                     }
@@ -425,19 +523,17 @@ GateOne.Base.update(GateOne.Input, {
     registerShortcut: function(keyString, shortcutObj) {
         /**:GateOne.Input.registerShortcut(keyString, shortcutObj)
 
-        :param string keyString: The KEY_<key> that will invoke this shortcut.
+        :param string keyString: The <key> that will invoke this shortcut.
         :param object shortcutObj: A JavaScript object containing two properties:  'modifiers' and 'action'.  See above for their format.
-
         **shortcutObj**
-
-            :param action: A string to be eval()'d or a function to be executed when the provided key combination is pressed.
-            :param modifiers: An object containing the modifier keys that must be pressed for the shortcut to be called.  Example: `{"ctrl": true, "alt": true, "meta": false, "shift": false}`.
+        :param action: A string to be eval()'d or a function to be executed when the provided key combination is pressed.
+        :param modifiers: An object containing the modifier keys that must be pressed for the shortcut to be called.  Example: `{"ctrl": true, "alt": true, "meta": false, "shift": false}`.
 
         Registers the given *shortcutObj* for the given *keyString* by adding a new object to :js:attr:`GateOne.Input.shortcuts`.  Here's an example:
 
         .. code-block:: javascript
 
-            GateOne.Input.registerShortcut('KEY_ARROW_LEFT', {
+            GateOne.Input.registerShortcut('ARROW_LEFT', {
                 'modifiers': {
                     'ctrl': true,
                     'alt': false,
@@ -452,7 +548,7 @@ GateOne.Base.update(GateOne.Input, {
 
         .. code-block:: javascript
 
-            GateOne.Input.registerShortcut('KEY_ARROW_LEFT', {
+            GateOne.Input.registerShortcut('ARROW_LEFT', {
                 'modifiers': {
                     'ctrl': true,
                     'shift': true
@@ -466,7 +562,7 @@ GateOne.Base.update(GateOne.Input, {
 
         .. code-block:: javascript
 
-            GateOne.Input.registerShortcut('KEY_ARROW_LEFT', {
+            GateOne.Input.registerShortcut('ARROW_LEFT', {
                 'modifiers': {
                     'ctrl': true,
                     'shift': true
@@ -477,16 +573,17 @@ GateOne.Base.update(GateOne.Input, {
 
         In the example above the ``GateOne.Visual.slideLeft`` function would only be executed if ``myCheckFunction()`` returned ``true`` and if 'GateOne.Terminal.MyPlugin.isAlive' existed and also evaluated to ``true``.
         */
+        go.Logging.deprecated("GateOne.Input.registerShortcut", gettext("Use GateOne.Events.on() with keydown or keyup events like 'go:keydown:<key/keystroke>' instead."));
         var match, conditionsMatch, overwrote;
         // Add any missing modifiers so we can perform easy true/false checks
-        shortcutObj.modifiers['altgr'] = shortcutObj.modifiers['altgr'] || false;
-        shortcutObj.modifiers['alt'] = shortcutObj.modifiers['alt'] || false;
-        shortcutObj.modifiers['ctrl'] = shortcutObj.modifiers['ctrl'] || false;
-        shortcutObj.modifiers['meta'] = shortcutObj.modifiers['meta'] || false;
-        shortcutObj.modifiers['shift'] = shortcutObj.modifiers['shift'] || false;
-        if (GateOne.Input.shortcuts[keyString]) {
+        shortcutObj.modifiers.altgr = shortcutObj.modifiers.altgr || false;
+        shortcutObj.modifiers.alt = shortcutObj.modifiers.alt || false;
+        shortcutObj.modifiers.ctrl = shortcutObj.modifiers.ctrl || false;
+        shortcutObj.modifiers.meta = shortcutObj.modifiers.meta || false;
+        shortcutObj.modifiers.shift = shortcutObj.modifiers.shift || false;
+        if (I.shortcuts[keyString]) {
             // Already exists, overwrite existing if conflict (and log it) or append it
-            GateOne.Input.shortcuts[keyString].forEach(function(shortcut) {
+            I.shortcuts[keyString].forEach(function(shortcut) {
                 match = true;
                 for (var mod in shortcutObj.modifiers) {
                     if (shortcutObj.modifiers[mod] != shortcut.modifiers[mod]) {
@@ -497,7 +594,7 @@ GateOne.Base.update(GateOne.Input, {
                     // There's a match in terms of modifiers; check conditions next
                     if (!shortcutObj['conditions']) {
                         // Only assume we're overriding an existing shortcut if there's no conditions
-                        logWarning("Overwriting existing shortcut for: " + keyString);
+                        logWarning(gettext("Overwriting existing shortcut for: ") + keyString);
                         shortcut = shortcutObj;
                         overwrote = true;
                     }
@@ -505,11 +602,11 @@ GateOne.Base.update(GateOne.Input, {
             });
             if (!overwrote) {
                 // No existing shortcut matches; append the new one
-                GateOne.Input.shortcuts[keyString].push(shortcutObj);
+                I.shortcuts[keyString].push(shortcutObj);
             }
         } else {
             // Create a new shortcut with the given parameters
-            GateOne.Input.shortcuts[keyString] = [shortcutObj];
+            I.shortcuts[keyString] = [shortcutObj];
         }
     },
     unregisterShortcut: function(keyString, shortcutObj) {
@@ -518,21 +615,21 @@ GateOne.Base.update(GateOne.Input, {
         Removes the shortcut associated with the given *keyString* and *shortcutObj*.
         */
         var match;
-        if (GateOne.Input.shortcuts[keyString]) {
-            for (var i=0; i < GateOne.Input.shortcuts[keyString].length; i++) {
+        if (I.shortcuts[keyString]) {
+            for (var i=0; i < I.shortcuts[keyString].length; i++) {
                 match = true;
                 for (var mod in shortcutObj.modifiers) {
-                    if (shortcutObj.modifiers[mod] != GateOne.Input.shortcuts[keyString][i].modifiers[mod]) {
+                    if (shortcutObj.modifiers[mod] != I.shortcuts[keyString][i].modifiers[mod]) {
                         match = false;
                     }
                 }
                 if (match) {
                     // There's a match...  Remove it
-                    GateOne.Input.shortcuts[keyString].splice(i, 1);
+                    I.shortcuts[keyString].splice(i, 1);
                 }
             }
-            if (!GateOne.Input.shortcuts[keyString].length) {
-                delete GateOne.Input.shortcuts[keyString];
+            if (!I.shortcuts[keyString].length) {
+                delete I.shortcuts[keyString];
             }
         } // else: Nothing to do
     },
@@ -543,17 +640,18 @@ GateOne.Base.update(GateOne.Input, {
 
         .. note:: This function only matters when Gate One is embedded into another application.
         */
+        go.Logging.deprecated("GateOne.Input.registerGlobalShortcut", gettext("Use GateOne.Events.on() with keydown or keyup events like 'go:keydown:<key/keystroke>' instead."));
         var match, overwrote;
         // Add any missing modifiers so we can perform easy true/false checks
-        shortcutObj.modifiers['altgr'] = shortcutObj.modifiers['altgr'] || false;
-        shortcutObj.modifiers['alt'] = shortcutObj.modifiers['alt'] || false;
-        shortcutObj.modifiers['ctrl'] = shortcutObj.modifiers['ctrl'] || false;
-        shortcutObj.modifiers['meta'] = shortcutObj.modifiers['meta'] || false;
-        shortcutObj.modifiers['shift'] = shortcutObj.modifiers['shift'] || false;
-        if (GateOne.Input.globalShortcuts[keyString]) {
+        shortcutObj.modifiers.altgr = shortcutObj.modifiers.altgr || false;
+        shortcutObj.modifiers.alt = shortcutObj.modifiers.alt || false;
+        shortcutObj.modifiers.ctrl = shortcutObj.modifiers.ctrl || false;
+        shortcutObj.modifiers.meta = shortcutObj.modifiers.meta || false;
+        shortcutObj.modifiers.shift = shortcutObj.modifiers.shift || false;
+        if (I.globalShortcuts[keyString]) {
             // Already exists, overwrite existing if conflict (and log it) or append it
             overwrote = false;
-            GateOne.Input.globalShortcuts[keyString].forEach(function(shortcut) {
+            I.globalShortcuts[keyString].forEach(function(shortcut) {
                 match = true;
                 for (var mod in shortcutObj.modifiers) {
                     if (shortcutObj.modifiers[mod] != shortcut.modifiers[mod]) {
@@ -562,18 +660,18 @@ GateOne.Base.update(GateOne.Input, {
                 }
                 if (match) {
                     // There's a match...  Log and overwrite it
-                    logWarning("Overwriting existing shortcut for: " + keyString);
+                    logWarning(gettext("Overwriting existing shortcut for: ") + keyString);
                     shortcut = shortcutObj;
                     overwrote = true;
                 }
             });
             if (!overwrote) {
                 // No existing shortcut matches, append the new one
-                GateOne.Input.globalShortcuts[keyString].push(shortcutObj);
+                I.globalShortcuts[keyString].push(shortcutObj);
             }
         } else {
             // Create a new shortcut with the given parameters
-            GateOne.Input.globalShortcuts[keyString] = [shortcutObj];
+            I.globalShortcuts[keyString] = [shortcutObj];
         }
     },
     unregisterGlobalShortcut: function(keyString, shortcutObj) {
@@ -582,38 +680,41 @@ GateOne.Base.update(GateOne.Input, {
         Removes the shortcut associated with the given *keyString* and *shortcutObj*.
         */
         var match;
-        if (GateOne.Input.globalShortcuts[keyString]) {
-            for (var i=0; i < GateOne.Input.globalShortcuts[keyString].length; i++) {
+        if (I.globalShortcuts[keyString]) {
+            for (var i=0; i < I.globalShortcuts[keyString].length; i++) {
                 match = true;
                 for (var mod in shortcutObj.modifiers) {
-                    if (shortcutObj.modifiers[mod] != GateOne.Input.globalShortcuts[keyString][i].modifiers[mod]) {
+                    if (shortcutObj.modifiers[mod] != I.globalShortcuts[keyString][i].modifiers[mod]) {
                         match = false;
                     }
                 }
                 if (match) {
                     // There's a match...  Remove it
-                    GateOne.Input.globalShortcuts[keyString].splice(i, 1);
+                    I.globalShortcuts[keyString].splice(i, 1);
                 }
             }
-            if (!GateOne.Input.globalShortcuts[keyString].length) {
-                delete GateOne.Input.globalShortcuts[keyString];
+            if (!I.globalShortcuts[keyString].length) {
+                delete I.globalShortcuts[keyString];
             }
         } // else: Nothing to do
     },
     humanReadableShortcut: function(name, modifiers) {
         /**:GateOne.Input.humanReadableShortcut(name, modifiers)
 
-        Given a key *name* such as 'KEY_DELETE' (or just 'G') and a *modifiers* object, returns a human-readable string.  Example:
+        Given a key *name* such as 'DELETE' (or just 'G') and a *modifiers* object, returns a human-readable string.  Example:
 
-            >>> GateOne.Input.humanReadableShortcut('KEY_DELETE', {"ctrl": true, "alt": true, "meta": false, "shift": false});
+            >>> GateOne.Input.humanReadableShortcut('DELETE', {"ctrl": true, "alt": true, "meta": false, "shift": false});
             Ctrl-Alt-Delete
         */
-        var out = "";
-        if (name.indexOf('KEY_') != -1) {
+        var out = "", modifierNames = ['Ctrl', 'Meta', 'Shift', 'Alt'];
+        if (name.indexOf('KEY_') != -1) { // NOTE: This is no longer used so it should never come up
             // Remove the KEY_ part
             name = name.split(/KEY_/)[1];
         }
         name = u.capitalizeFirstLetter(name.toLowerCase());
+        if (modifierNames.indexOf(name) != -1) {
+            return name; // So we don't return things like 'Ctrl-Ctrl'
+        }
         out += modifiers.ctrl ? 'Ctrl-' : '';
         out += modifiers.alt ? 'Alt-' : '';
         out += modifiers.meta ? 'Meta-' : '';
@@ -629,11 +730,7 @@ GateOne.Base.update(GateOne.Input, {
             >>> GateOne.Input.humanReadableShortcutList(GateOne.Input.shortcuts);
             [['Ctrl-Alt-G', 'Grid View'], ['Ctrl-Alt-N', 'New Workspace']]
         */
-        for (var shortcut in goIn.shortcuts) {
-            if (shortcut.indexOf('KEY_') == -1) {
-                continue; // Only interested in proper key shortcuts
-            }
-            console.log('shortcut: ' + shortcut);
+        for (var shortcut in I.shortcuts) {
             var splitKey = i.split('_'),
                 keyName = '',
                 outStr = '';
@@ -642,8 +739,8 @@ GateOne.Base.update(GateOne.Input, {
                 keyName += splitKey[j].toLowerCase() + ' ';
             }
             keyName.trim();
-            for (var j in goIn.shortcuts[i]) {
-                if (goIn.shortcuts[i][j].modifiers) {
+            for (var j in I.shortcuts[i]) {
+                if (I.shortcuts[i][j].modifiers) {
                     outStr += j + '-';
                 }
             }
@@ -657,31 +754,30 @@ GateOne.Base.update(GateOne.Input, {
 // Expand GateOne.Input.specialKeys to be more complete:
 (function () { // Note:  Copied from MochiKit.Signal.
 // Jonathan Gardner, Beau Hartshorne, and Bob Ippolito are JavaScript heroes!
-    /* for KEY_0 - KEY_9 */
-    var specialKeys = GateOne.Input.specialKeys;
+    /* for 0 - 9 */
+    var specialKeys = I.specialKeysCode;
     for (var i = 48; i <= 57; i++) {
-        specialKeys[0][i] = 'KEY_' + (i - 48);
+        specialKeys[0][i] = '' + (i - 48);
     }
-    /* for KEY_A - KEY_Z */
+    /* for A - Z */
     for (var i = 65; i <= 90; i++) {
-        specialKeys[0][i] = 'KEY_' + String.fromCharCode(i);
+        specialKeys[0][i] = String.fromCharCode(i);
     }
-    /* for KEY_NUM_PAD_0 - KEY_NUM_PAD_9 */
+    /* for NUM_PAD_0 - NUM_PAD_9 */
     for (var i = 96; i <= 105; i++) {
-        specialKeys[0][i] = 'KEY_NUM_PAD_' + (i - 96);
+        specialKeys[0][i] = 'NUM_PAD_' + (i - 96);
     }
-    /* for KEY_F1 - KEY_F12 */
+    /* for F1 - F12 */
     for (var i = 112; i <= 123; i++) {
-        specialKeys[0][i] = 'KEY_F' + (i - 112 + 1);
+        specialKeys[0][i] = 'F' + (i - 112 + 1);
     }
 })();
 // Fill out the special Mac keys:
 (function () {
-    var specialMacKeys = GateOne.Input.specialMacKeys;
+    var specialMacKeysCode = I.specialMacKeysCode;
     for (var i = 63236; i <= 63242; i++) {
-        specialMacKeys[i] = 'KEY_F' + (i - 63236 + 1);
+        specialMacKeysCode[i] = 'F' + (i - 63236 + 1);
     }
 })();
 
 });
-

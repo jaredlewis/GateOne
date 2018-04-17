@@ -1,15 +1,16 @@
 
-GateOne.Base.superSandbox("GateOne.Terminal.Input", ["GateOne.Terminal", "GateOne.User"], function(window, undefined) {
+GateOne.Base.superSandbox("GateOne.Terminal.Input", ["GateOne.Terminal", "GateOne.User", "GateOne.Input"], function(window, undefined) {
 "use strict";
 
 // Sandbox-wide shortcuts
 var go = GateOne,
     prefix = go.prefs.prefix,
     t = go.Terminal,
-    i = go.Input, // Not the same as GateOne.Terminal.Input!
+    I = go.Input, // Not the same as GateOne.Terminal.Input!
     u = go.Utils,
     v = go.Visual,
     E = go.Events,
+    gettext = go.i18n.gettext,
     ESC = String.fromCharCode(27),
     logFatal = GateOne.Logging.logFatal,
     logError = GateOne.Logging.logError,
@@ -114,7 +115,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         */
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
             m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             button,
             termObj = go.Terminal.terminals[selectedTerm],
             termNode = termObj['node'],
@@ -153,7 +154,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         If the ``Alt`` key is held while right-clicking the normal context menu will appear.
         */
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
-            modifiers = i.modifiers(e);
+            modifiers = I.modifiers(e);
         if (go.Terminal.terminals[selectedTerm]['mouse'] == "mouse_button_motion") {
             if (!modifiers.alt) {
                 e.preventDefault();
@@ -197,7 +198,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         // TODO: Add a shift-click context menu for special operations.  Why shift and not ctrl-click or alt-click?  Some platforms use ctrl-click to emulate right-click and some platforms use alt-click to move windows around.
         logDebug("GateOne.Terminal.Input.onMouseDown() button: " + e.button + ", which: " + e.which);
         var m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             X, Y, button, className, // Used by mouse coordinates/tracking stuff
             selectedTerm = localStorage[prefix+'selectedTerminal'],
             selectedPastearea = null,
@@ -305,7 +306,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         var selectedTerm = localStorage[prefix+'selectedTerminal'],
             selectedText = u.getSelText(),
             m = go.Input.mouse(e),
-            modifiers = i.modifiers(e),
+            modifiers = I.modifiers(e),
             X, Y, button, className, // Used by mouse coordinates/tracking stuff
             elementUnder = document.elementFromPoint(e.clientX, e.clientY);
         logDebug("GateOne.Terminal.Input.onMouseUp: e.button: " + e.button + ", e.which: " + e.which);
@@ -396,11 +397,18 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         t.Input.inputNode.focus();
     },
     onCopy: function() {
-        /**:GateOne.Terminal.Input.onCopy()
+        /**:GateOne.Terminal.Input.onCopy(e)
 
-        Returns all 'pastearea' elements to a visible state after a copy operation so that the browser's regular context menu will be usable again (for pasting).
+        Returns all 'pastearea' elements to a visible state after a copy operation so that the browser's regular context menu will be usable again (for pasting).  Also displays a message to the user letting them know that the text was copied successfully (because having your highlighted text suddenly disappear isn't that intuitive).
         */
-        u.showElements('.✈pastearea');
+        if (go.User.activeApplication == 'Terminal') {
+            setTimeout(function() {
+                // For some reason we have to remove the current selection for Firefox to bring the pastearea to the foreground (so the user can right-click to paste):
+                window.getSelection().removeAllRanges();
+                u.showElements('.✈pastearea');
+            }, 50);
+            v.displayMessage(gettext("Text copied to clipboard."));
+        }
     },
     capture: function() {
         /**:GateOne.Terminal.Input.capture()
@@ -411,19 +419,24 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         var terms = u.toArray(u.getNodes('.✈terminal')),
             selectedText = u.getSelText();
         if (!t.Input.inputNode) {
-            t.Input.inputNode = u.createElement('textarea', {'class': '✈IME', 'style': {'position': 'fixed', 'z-index': 99999, 'top': '-9999px', 'left': '-9999px', 'autocapitalize': 'off', 'autocomplete': 'off', 'autocorrect': 'off', 'spellcheck': 'false'}});
+            t.Input.inputNode = u.createElement('textarea', {'class': '✈IME', 'style': {'position': 'fixed', 'z-index': 99999, 'top': '0px', 'autocapitalize': 'off', 'autocomplete': 'off', 'autocorrect': 'off', 'spellcheck': 'false'}});
             go.node.appendChild(t.Input.inputNode);
             t.Input.inputNode.addEventListener('compositionstart', t.Input.onCompositionStart, true);
             t.Input.inputNode.addEventListener('compositionupdate', t.Input.onCompositionUpdate, true);
             t.Input.inputNode.addEventListener('compositionend', t.Input.onCompositionEnd, true);
+            E.on('go:app_chooser', function(workspace) {
+                t.Input.disableCapture(null, true); // Force capture off when bringing up the application chooser
+            });
         }
         u.showElement(t.Input.inputNode);
         if (!t.Input.addedEventListeners) {
             t.Input.inputNode.addEventListener('input', t.Input.onInput, false);
             t.Input.inputNode.tabIndex = 1; // Just in case--this is necessary to set focus
-            go.node.addEventListener('keydown', t.Input.onKeyDown, true);
-            go.node.addEventListener('keyup', t.Input.onKeyUp, true);
+            t.Input.inputNode.addEventListener('paste', t.Input.onPaste, false);
             t.Input.inputNode.addEventListener('blur', t.Input.disableCapture, true);
+            t.Input.inputNode.addEventListener('keydown', t.Input.onKeyDown, true);
+            t.Input.inputNode.addEventListener('keyup', t.Input.onKeyUp, true);
+            go.node.addEventListener('copy', t.Input.onCopy, false);
             terms.forEach(function(termNode) {
                 termNode.addEventListener('copy', t.Input.onCopy, false);
                 termNode.addEventListener('paste', t.Input.onPaste, false);
@@ -445,7 +458,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         Disables the various input events that capture mouse and keystroke events.  This allows things like input elements and forms to work properly (so keystrokes can pass through without intervention).
         */
-        logDebug('go.Terminal.Input.disableCapture()');
+        logDebug('go.Terminal.Input.disableCapture()', e);
         var terms = u.toArray(u.getNodes('.✈terminal'));
         if (!force) {
             if (t.switchedWorkspace) {
@@ -467,14 +480,16 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 return; // Act as if we were never called to avoid flashing the overlay
             }
         }
-        if (t.Input.InputNode) {
+        if (t.Input.inputNode) {
             t.Input.inputNode.removeEventListener('input', t.Input.onInput, false);
             t.Input.inputNode.tabIndex = null;
+            t.Input.inputNode.removeEventListener('paste', t.Input.onPaste, false);
             t.Input.inputNode.removeEventListener('blur', t.Input.disableCapture, true);
+            t.Input.inputNode.removeEventListener('keydown', t.Input.onKeyDown, true);
+            t.Input.inputNode.removeEventListener('keyup', t.Input.onKeyUp, true);
             u.hideElement(t.Input.inputNode);
         }
-        go.node.removeEventListener('keydown', t.Input.onKeyDown, true);
-        go.node.removeEventListener('keyup', t.Input.onKeyUp, true);
+        go.node.removeEventListener('copy', t.Input.onCopy, false);
         terms.forEach(function(termNode) {
             termNode.removeEventListener('copy', t.Input.onCopy, false);
             termNode.removeEventListener('paste', t.Input.onPaste, false);
@@ -488,15 +503,14 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         });
         t.Input.addedEventListeners = false;
         // TODO: Check to see if this should stay in GateOne.Input:
-        i.metaHeld = false; // This can get stuck at 'true' if the uses does something like command-tab to switch applications.
+        I.metaHeld = false; // This can get stuck at 'true' if the uses does something like command-tab to switch applications.
     },
     onPaste: function(e) {
         /**:GateOne.Terminal.Input.onPaste(e)
 
         Attached to the 'paste' event on the terminal application container; converts pasted text to plaintext and sends it to the selected terminal.
         */
-        var goDiv = go.node;
-        logDebug("go.Terminal.Input.onPaste() goDiv registered paste event.");
+        logDebug("go.Terminal.Input.onPaste() registered paste event.");
         if (document.activeElement.tagName == "INPUT" || document.activeElement.tagName == "TEXTAREA" || document.activeElement.tagName == "SELECT" || document.activeElement.tagName == "BUTTON") {
             return; // Don't do anything if the user is editing text in an input/textarea or is using a select element (so the up/down arrows work)
         }
@@ -574,8 +588,8 @@ GateOne.Base.update(GateOne.Terminal.Input, {
             t.sendString(t.Input.composition);
             t.Input.commandBuffer += t.Input.composition;
         }
-        t.Input.inputNode.style['top'] = "-99999px";
-        t.Input.inputNode.style['left'] = "-99999px";
+        t.Input.inputNode.style['top'] = "0px";
+        t.Input.inputNode.style['left'] = null;
         setTimeout(function() {
             // Wrapped in a timeout because Firefox fires the onkeyup event immediately after compositionend and we don't want that to result in double keystrokes
             t.Input.composition = null;
@@ -597,9 +611,10 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         Called when the terminal encounters a `keyup` event; just ensures that `GateOne.Terminal.Input.inputNode` is emptied so we don't accidentally send characters we shouldn't.
         */
-        // Used in conjunction with GateOne.Input.modifiers() and GateOne.Input.onKeyDown() to emulate the meta key modifier using KEY_WINDOWS_LEFT and KEY_WINDOWS_RIGHT since "meta" doesn't work as an actual modifier on some browsers/platforms.
-        var modifiers = i.modifiers(e);
-        logDebug('GateOne.Terminal.Input.onKeyUp()');
+        // Used in conjunction with GateOne.Input.modifiers() and GateOne.Input.onKeyDown() to emulate the meta key modifier using WINDOWS_LEFT and WINDOWS_RIGHT since "meta" doesn't work as an actual modifier on some browsers/platforms.
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
+        logDebug('GateOne.Terminal.Input.onKeyUp()', e);
         if (!t.Input.composition) {
             // If a non-shift modifier was depressed, emulate the given keystroke:
             if (!(modifiers.alt || modifiers.ctrl || modifiers.meta)) {
@@ -608,14 +623,14 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 t.Input.inputNode.value = ""; // Keep it empty until needed
             }
         }
-        E.trigger("terminal:onkeyup", e);
+        E.trigger("terminal:keyup:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
     },
     onInput: function(e) {
         /**:GateOne.Terminal.Input.onInput(e)
 
         Attached to the `input` event on `GateOne.Terminal.Input.inputNode`; sends its contents.  If the user is in the middle of composing text via an `IME <http://en.wikipedia.org/wiki/Input_method>`_ it will wait until their composition is complete before sending the characters.
         */
-        logDebug("go.Terminal.Input.onInput()");
+        logDebug("go.Terminal.Input.onInput()", e);
         var inputNode = t.Input.inputNode,
             value = inputNode.value;
         if (!t.Input.composition) {
@@ -631,15 +646,15 @@ GateOne.Base.update(GateOne.Terminal.Input, {
         Handles keystroke events by determining which kind of event occurred and how/whether it should be sent to the server as specific characters or escape sequences.
         */
         // NOTE:  In order for e.preventDefault() to work in canceling browser keystrokes like Ctrl-C it must be called before keyup.
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
-            term = localStorage[go.prefs.prefix+'selectedTerminal'];
-        logDebug("go.Terminal.Input.onKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
-        if (i.handledGlobal) {
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
+            term = localStorage[prefix+'selectedTerminal'];
+        logDebug("GateOne.Terminal.Input.onKeyDown() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
+        if (I.handledGlobal) {
             // Global shortcuts take precedence
             return;
         }
-        E.trigger("terminal:onkeydown", e); // Placed before the execKeystroke() call below so the event can be manipulated beforehand.
+        E.trigger("terminal:keydown:" + I.humanReadableShortcut(key.string, modifiers).toLowerCase(), e);
         t.Input.execKeystroke(e);
     },
     execKeystroke: function(e) {
@@ -647,11 +662,11 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         For the Terminal application, executes the keystroke or shortcut associated with the given keydown event (*e*).
         */
-        logDebug('GateOne.Terminal.Input.execKeystroke()');
-        var key = i.key(e),
-            modifiers = i.modifiers(e);
-        if (key.string == 'KEY_WINDOWS_LEFT' || key.string == 'KEY_WINDOWS_RIGHT') {
-            i.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
+        logDebug('GateOne.Terminal.Input.execKeystroke()', e);
+        var key = I.key(e),
+            modifiers = I.modifiers(e);
+        if (key.string == 'WINDOWS_LEFT' || key.string == 'WINDOWS_RIGHT') {
+            I.metaHeld = true; // Lets us emulate the "meta" modifier on browsers/platforms that don't get it right.
             return true; // Save some CPU
         }
         if (t.Input.composition) {
@@ -674,22 +689,22 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         .. note:: :kbd:`Shift+key` also winds up being handled by this function.
         */
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
             buffer = t.Input.bufferEscSeq,
             q = function(c) {
                 e.preventDefault();
                 t.Input.queue(c);
             },
             term = localStorage[prefix+'selectedTerminal'];
-        logDebug("emulateKey() term: " +term+ ", key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
+        logDebug("emulateKey() term: " + term + ", key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + u.items(modifiers));
         t.Input.sentBackspace = false;
         // Need some special logic for the F11 key since it controls fullscreen mode and without it, users could get stuck in fullscreen mode.
         if (!modifiers.shift && t.Input.F11 === true && !skipF11check) { // This is the *second* time F11 was pressed within 0.750 seconds.
             t.Input.F11 = false;
             clearTimeout(t.Input.F11timer);
             return; // Don't proceed further
-        } else if (key.string == 'KEY_F11' && !skipF11check) { // Start tracking a new F11 event
+        } else if (key.string == 'F11' && !skipF11check) { // Start tracking a new F11 event
             t.Input.F11 = true;
             e.preventDefault();
             clearTimeout(t.Input.F11timer);
@@ -698,16 +713,16 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 t.Input.emulateKey(e, true); // Pretend this never happened
                 t.Input.sendChars();
             }, 750);
-            v.displayMessage("NOTE: Rapidly pressing F11 twice will enable/disable fullscreen mode.");
+            v.displayMessage(gettext("NOTE: Rapidly pressing F11 twice will enable/disable fullscreen mode."));
             return;
         }
-        if (key.string == "KEY_UNKNOWN") {
+        if (key.string == "UNKNOWN") {
             return; // Without this, unknown keys end up sending a null character which isn't a good idea =)
         }
         if (!t.terminals[term]) {
             return; // Nothing to do
         }
-        if (key.string != "KEY_SHIFT" && key.string != "KEY_CTRL" && key.string != "KEY_ALT" && key.string != "KEY_META") {
+        if (key.string != "SHIFT" && key.string != "CTRL" && key.string != "ALT" && key.string != "META") {
             // Scroll to bottom (seems like a normal convention for when a key is pressed in a terminal)
             u.scrollToBottom(t.terminals[term]['node']);
         }
@@ -717,13 +732,13 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 var mode = t.terminals[term]['mode'], // Controls Application Cursor Keys (DECCKM)
                     keyboard = t.terminals[term]['keyboard']; // Controls most everything else (FKeys, Numpad, etc)
                 if (!modifiers.shift) { // Non-modified keypress
-                    if (key.string == 'KEY_BACKSPACE') {
+                    if (key.string == 'BACKSPACE') {
                         // So we can switch between ^? and ^H
                         q(t.terminals[term]['backspace']);
                         if (t.Input.automaticBackspace) {
                             t.Input.sentBackspace = true;
                         }
-                    } else if (u.startsWith('KEY_ARROW', key.string)) {
+                    } else if (u.startsWith('ARROW', key.string)) {
                         // Handle Application Cursor Keys stuff
                         if (t.Input.keyTable[key.string][mode]) {
                             q(t.Input.keyTable[key.string][mode]);
@@ -738,7 +753,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                             // Fall back to using default
                             q(t.Input.keyTable[key.string]["default"]);
                         }
-                        if (key.string == 'KEY_ENTER') {
+                        if (key.string == 'ENTER') {
                             // Make a note of the text leading up to pressing of the Enter key so we can (do our best to) keep track of commands
                             E.trigger("terminal:enter_key");
                             t.Input.lastCommand = t.Input.commandBuffer;
@@ -746,13 +761,15 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                         }
                     }
                 } else { // Shift was held down
-                    if (t.Input.keyTable[key.string]['shift']) {
+                    if (key.string == 'INSERT') {
+                        t.paste(e);
+                    } else if (t.Input.keyTable[key.string]['shift']) {
                         q(t.Input.keyTable[key.string]['shift']);
                     // This allows the browser's native pgup and pgdown to scroll up and down when the shift key is held:
-                    } else if (key.string == 'KEY_PAGE_UP') {
+                    } else if (key.string == 'PAGE_UP') {
                         e.preventDefault();
                         t.scrollPageUp();
-                    } else if (key.string == 'KEY_PAGE_DOWN') {
+                    } else if (key.string == 'PAGE_DOWN') {
                         e.preventDefault();
                         t.scrollPageDown();
                     } else if (t.Input.keyTable[key.string][keyboard]) { // Fall back to the mode's non-shift value
@@ -769,8 +786,8 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 
         This method translates ctrl/alt/meta key combos such as :kbd:`Ctrl-c` into their string equivalents using `GateOne.Terminal.Input.keyTable` and sends them to the server.
         */
-        var key = i.key(e),
-            modifiers = i.modifiers(e),
+        var key = I.key(e),
+            modifiers = I.modifiers(e),
             term = localStorage[prefix+'selectedTerminal'],
             keyboard = t.terminals[term]['keyboard'],
             buffer = t.Input.bufferEscSeq,
@@ -779,10 +796,10 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                 e.preventDefault();
                 t.Input.queue(c);
             };
-        if (key.string == "KEY_SHIFT" || key.string == "KEY_ALT" || key.string == "KEY_CTRL" || key.string == "KEY_WINDOWS_LEFT" || key.string == "KEY_WINDOWS_RIGHT" || key.string == "KEY_UNKNOWN") {
+        if (key.string == "SHIFT" || key.string == "ALT" || key.string == "CTRL" || key.string == "WINDOWS_LEFT" || key.string == "WINDOWS_RIGHT" || key.string == "UNKNOWN") {
             return; // For some reason if you press any combo of these keys at the same time it occasionally will send the keystroke as the second key you press.  It's odd but this ensures we don't act upon such things.
         }
-        logDebug("go.Terminal.Input.emulateKeyCombo() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
+        logDebug("GateOne.Terminal.Input.emulateKeyCombo() key.string: " + key.string + ", key.code: " + key.code + ", modifiers: " + go.Utils.items(modifiers));
         // Handle ctrl-<key> and ctrl-shift-<key> combos
         if (modifiers.ctrl && !modifiers.alt && !modifiers.meta) {
             if (t.Input.keyTable[key.string]) {
@@ -807,7 +824,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                     if (key.code == 76) { // Ctrl-l gets some extra love
                         go.Terminal.fullRefresh(localStorage[go.prefs.prefix+'selectedTerminal']);
                         q(String.fromCharCode(key.code - 64));
-                    } else if (key.string == 'KEY_C') {
+                    } else if (key.string == 'c') {
                         // Check if the user has something highlighted.  If they do, assume they want to copy the text.
                         // NOTE:  This shouldn't be *too* intrusive on regular Ctrl-C behavior since you can just press it twice if something is selected and it will have the normal effect of sending a SIGINT.  I don't know about YOU but when Ctrl-C doesn't work the first time I instinctively just mash that combo a few times :)
                         if (u.getSelText()) {
@@ -870,7 +887,7 @@ GateOne.Base.update(GateOne.Terminal.Input, {
                         }
                     }
                 }
-            } else if (key.string == 'KEY_V') {
+            } else if (key.string == 'v') {
                 // Macs need this to support pasting with ⌘-v (⌘-c doesn't need anything special)
                 term = localStorage[go.prefs.prefix+'selectedTerminal'];
                 pastearea = go.Terminal.terminals[term]['pasteNode'];
@@ -924,108 +941,96 @@ GateOne.Base.update(GateOne.Terminal.Input, {
             }
         }
     },
-    handleVisibility: function(e) {
-        // Calls GateOne.Terminal.Input.capture() when the page becomes visible again *if* goDiv had focus before the document went invisible
-        if (!u.isPageHidden()) {
-            // Page has become visibile again
-            logDebug("Ninja Mode disabled.");
-            if (document.activeElement == go.node) {
-                // Gate One was active when the page became hidden
-                t.Input.capture(); // Resume keyboard input
-            }
-        } else {
-            logDebug("Ninja Mode!  Gate One has become hidden.");
-        }
-    },
     // TODO: Add a GUI for configuring the keyboard.
     // TODO: Remove the 'xterm' values and instead make an xterm-specific keyTable that only contains the difference.  Then change the logic in the keypress functions to first check for overridden values before falling back to the default keyTable.
     keyTable: {
         // Keys that need special handling.  'default' means vt100/vt220 (for the most part).  These can get overridden by plugins or the user (GUI forthcoming)
         // NOTE: If a key is set to null that means it won't send anything to the server onKeyDown (at all).
-        'KEY_1': {'alt': ESC+"1", 'ctrl': "1", 'ctrl-shift': "1"},
-        'KEY_2': {'alt': ESC+"2", 'ctrl': String.fromCharCode(0), 'ctrl-shift': String.fromCharCode(0)},
-        'KEY_3': {'alt': ESC+"3", 'ctrl': ESC, 'ctrl-shift': ESC},
-        'KEY_4': {'alt': ESC+"4", 'ctrl': String.fromCharCode(28), 'ctrl-shift': String.fromCharCode(28)},
-        'KEY_5': {'alt': ESC+"5", 'ctrl': String.fromCharCode(29), 'ctrl-shift': String.fromCharCode(29)},
-        'KEY_6': {'alt': ESC+"6", 'ctrl': String.fromCharCode(30), 'ctrl-shift': String.fromCharCode(30)},
-        'KEY_7': {'alt': ESC+"7", 'ctrl': String.fromCharCode(31), 'ctrl-shift': String.fromCharCode(31)},
-        'KEY_8': {'alt': ESC+"8", 'ctrl': String.fromCharCode(32), 'ctrl-shift': String.fromCharCode(32)},
-        'KEY_9': {'alt': ESC+"9", 'ctrl': "9", 'ctrl-shift': "9"},
-        'KEY_0': {'alt': ESC+"0", 'ctrl': "0", 'ctrl-shift': "0"},
+        '1': {'alt': ESC+"1", 'ctrl': "1", 'ctrl-shift': "1"},
+        '2': {'alt': ESC+"2", 'ctrl': String.fromCharCode(0), 'ctrl-shift': String.fromCharCode(0)},
+        '3': {'alt': ESC+"3", 'ctrl': ESC, 'ctrl-shift': ESC},
+        '4': {'alt': ESC+"4", 'ctrl': String.fromCharCode(28), 'ctrl-shift': String.fromCharCode(28)},
+        '5': {'alt': ESC+"5", 'ctrl': String.fromCharCode(29), 'ctrl-shift': String.fromCharCode(29)},
+        '6': {'alt': ESC+"6", 'ctrl': String.fromCharCode(30), 'ctrl-shift': String.fromCharCode(30)},
+        '7': {'alt': ESC+"7", 'ctrl': String.fromCharCode(31), 'ctrl-shift': String.fromCharCode(31)},
+        '8': {'alt': ESC+"8", 'ctrl': String.fromCharCode(32), 'ctrl-shift': String.fromCharCode(32)},
+        '9': {'alt': ESC+"9", 'ctrl': "9", 'ctrl-shift': "9"},
+        '0': {'alt': ESC+"0", 'ctrl': "0", 'ctrl-shift': "0"},
+        'G': {'altgr': "@"},
         // NOTE to self: xterm/vt100/vt220, for 'linux' (and possibly others) use [[A, [[B, [[C, [[D, and [[E
-        'KEY_F1': {'default': ESC+"OP", 'alt': ESC+"O3P", 'sco': ESC+"[M", 'sco-ctrl': ESC+"[k"},
-        'KEY_F2': {'default': ESC+"OQ", 'alt': ESC+"O3Q", 'sco': ESC+"[N", 'sco-ctrl': ESC+"[l"},
-        'KEY_F3': {'default': ESC+"OR", 'alt': ESC+"O3R", 'sco': ESC+"[O", 'sco-ctrl': ESC+"[m"},
-        'KEY_F4': {'default': ESC+"OS", 'alt': ESC+"O3S", 'sco': ESC+"[P", 'sco-ctrl': ESC+"[n"},
-        'KEY_F5': {'default': ESC+"[15~", 'alt': ESC+"[15;3~", 'sco': ESC+"[Q", 'sco-ctrl': ESC+"[o"},
-        'KEY_F6': {'default': ESC+"[17~", 'alt': ESC+"[17;3~", 'sco': ESC+"[R", 'sco-ctrl': ESC+"[p"},
-        'KEY_F7': {'default': ESC+"[18~", 'alt': ESC+"[18;3~", 'sco': ESC+"[S", 'sco-ctrl': ESC+"[q"},
-        'KEY_F8': {'default': ESC+"[19~", 'alt': ESC+"[19;3~", 'sco': ESC+"[T", 'sco-ctrl': ESC+"[r"},
-        'KEY_F9': {'default': ESC+"[20~", 'alt': ESC+"[20;3~", 'sco': ESC+"[U", 'sco-ctrl': ESC+"[s"},
-        'KEY_F10': {'default': ESC+"[21~", 'alt': ESC+"[21;3~", 'sco': ESC+"[V", 'sco-ctrl': ESC+"[t"},
-        'KEY_F11': {'default': ESC+"[23~", 'alt': ESC+"[23;3~", 'sco': ESC+"[W", 'sco-ctrl': ESC+"[u"},
-        'KEY_F12': {'default': ESC+"[24~", 'alt': ESC+"[24;3~"},
-        'KEY_F13': {'default': ESC+"[25~", 'alt': ESC+"[25;3~", 'sco': ESC+"[X", 'sco-ctrl': ESC+"[v", 'xterm': ESC+"O2P"},
-        'KEY_F14': {'default': ESC+"[26~", 'alt': ESC+"[26;3~", 'xterm': ESC+"O2Q"},
-        'KEY_F15': {'default': ESC+"[28~", 'alt': ESC+"[28;3~", 'xterm': ESC+"O2R"},
-        'KEY_F16': {'default': ESC+"[29~", 'alt': ESC+"[29;3~", 'xterm': ESC+"O2S"},
-        'KEY_F17': {'default': ESC+"[31~", 'alt': ESC+"[31;3~", 'xterm': ESC+"[15;2~"},
-        'KEY_F18': {'default': ESC+"[32~", 'alt': ESC+"[32;3~", 'xterm': ESC+"[17;2~"},
-        'KEY_F19': {'default': ESC+"[33~", 'alt': ESC+"[33;3~", 'xterm': ESC+"[18;2~"},
-        'KEY_F20': {'default': ESC+"[34~", 'alt': ESC+"[34;3~", 'xterm': ESC+"[19;2~"},
-        'KEY_F21': {'default': ESC+"[20;2~"}, // All F-keys beyond this point are xterm-style (vt220 only goes up to F20)
-        'KEY_F22': {'default': ESC+"[21;2~"},
-        'KEY_F23': {'default': ESC+"[23;2~"},
-        'KEY_F24': {'default': ESC+"[24;2~"},
-        'KEY_F25': {'default': ESC+"O5P"},
-        'KEY_F26': {'default': ESC+"O5Q"},
-        'KEY_F27': {'default': ESC+"O5R"},
-        'KEY_F28': {'default': ESC+"O5S"},
-        'KEY_F29': {'default': ESC+"[15;5~"},
-        'KEY_F30': {'default': ESC+"[17;5~"},
-        'KEY_F31': {'default': ESC+"[18;5~"},
-        'KEY_F32': {'default': ESC+"[19;5~"},
-        'KEY_F33': {'default': ESC+"[20;5~"},
-        'KEY_F34': {'default': ESC+"[21;5~"},
-        'KEY_F35': {'default': ESC+"[23;5~"},
-        'KEY_F36': {'default': ESC+"[24;5~"},
-        'KEY_F37': {'default': ESC+"O6P"},
-        'KEY_F38': {'default': ESC+"O6Q"},
-        'KEY_F39': {'default': ESC+"O6R"},
-        'KEY_F40': {'default': ESC+"O6S"},
-        'KEY_F41': {'default': ESC+"[15;6~"},
-        'KEY_F42': {'default': ESC+"[17;6~"},
-        'KEY_F43': {'default': ESC+"[18;6~"},
-        'KEY_F44': {'default': ESC+"[19;6~"},
-        'KEY_F45': {'default': ESC+"[20;6~"},
-        'KEY_F46': {'default': ESC+"[21;6~"},
-        'KEY_F47': {'default': ESC+"[23;6~"},
-        'KEY_F48': {'default': ESC+"[24;6~"},
-        'KEY_ENTER': {'default': String.fromCharCode(13), 'ctrl': String.fromCharCode(13)},
-        'KEY_NUM_PAD_ENTER': {'default': String.fromCharCode(13), 'ctrl': String.fromCharCode(13)},
-        'KEY_BACKSPACE': {'default': String.fromCharCode(127), 'alt': ESC+String.fromCharCode(8)}, // Default is ^?. Will be changable to ^H eventually.
-        'KEY_NUM_PAD_CLEAR': String.fromCharCode(12), // Not sure if this will do anything
-        'KEY_SHIFT': null,
-        'KEY_CTRL': null,
-        'KEY_ALT': null,
-        'KEY_PAUSE': {'default': ESC+"[28~", 'xterm': ESC+"O2R"}, // Same as F15
-        'KEY_CAPS_LOCK': null,
-        'KEY_ESCAPE': {'default': ESC},
-        'KEY_TAB': {'default': String.fromCharCode(9), 'shift': ESC+"[Z"},
-        'KEY_SPACEBAR': {'ctrl': String.fromCharCode(0)}, // NOTE: Do we *really* need to have an appmode option for this?
-        'KEY_PAGE_UP': {'default': ESC+"[5~", 'alt': ESC+"[5;3~", 'sco': ESC+"[I"},
-        'KEY_PAGE_DOWN': {'default': ESC+"[6~", 'alt': ESC+"[6;3~", 'sco': ESC+"[G"}, // ^[[6~
-        'KEY_END': {'default': ESC+"[F", 'meta': ESC+"[1;1F", 'shift': ESC+"[1;2F", 'alt': ESC+"[1;3F", 'alt-shift': ESC+"[1;4F", 'ctrl': ESC+"[1;5F", 'ctrl-shift': ESC+"[1;6F", 'appmode': ESC+"OF", 'sco': ESC+"[F"},
-        'KEY_HOME': {'default': ESC+"[H", 'meta': ESC+"[1;1H", 'shift': ESC+"[1;2H", 'alt': ESC+"[1;3H", 'alt-shift': ESC+"[1;4H", 'ctrl': ESC+"[1;5H", 'ctrl-shift': ESC+"[1;6H", 'appmode': ESC+"OH", 'sco': ESC+"[H"},
-        'KEY_ARROW_LEFT': {'default': ESC+"[D", 'alt': ESC+"[1;3D", 'ctrl': ESC+"[1;5D", 'appmode': ESC+"OD"},
-        'KEY_ARROW_UP': {'default': ESC+"[A", 'alt': ESC+"[1;3A", 'ctrl': ESC+"[1;5A", 'appmode': ESC+"OA"},
-        'KEY_ARROW_RIGHT': {'default': ESC+"[C", 'alt': ESC+"[1;3C", 'ctrl': ESC+"[1;5C", 'appmode': ESC+"OC"},
-        'KEY_ARROW_DOWN': {'default': ESC+"[B", 'alt': ESC+"[1;3B", 'ctrl': ESC+"[1;5B", 'appmode': ESC+"OB"},
-        'KEY_PRINT_SCREEN': {'default': ESC+"[25~", 'xterm': ESC+"O2P"}, // Same as F13
-        'KEY_INSERT': {'default': ESC+"[2~", 'meta': ESC+"[2;1~", 'alt': ESC+"[2;3~", 'alt-shift': ESC+"[2;4~", 'sco': ESC+"[L"},
-        'KEY_DELETE': {'default': ESC+"[3~", 'shift': ESC+"[3;2~", 'alt': ESC+"[3;3~", 'alt-shift': ESC+"[3;4~", 'ctrl': ESC+"[3;5~", 'sco': ESC+"?"},
-        'KEY_WINDOWS_LEFT': null,
-        'KEY_WINDOWS_RIGHT': null,
+        'F1': {'default': ESC+"OP", 'alt': ESC+"O3P", 'sco': ESC+"[M", 'sco-ctrl': ESC+"[k"},
+        'F2': {'default': ESC+"OQ", 'alt': ESC+"O3Q", 'sco': ESC+"[N", 'sco-ctrl': ESC+"[l"},
+        'F3': {'default': ESC+"OR", 'alt': ESC+"O3R", 'sco': ESC+"[O", 'sco-ctrl': ESC+"[m"},
+        'F4': {'default': ESC+"OS", 'alt': ESC+"O3S", 'sco': ESC+"[P", 'sco-ctrl': ESC+"[n"},
+        'F5': {'default': ESC+"[15~", 'alt': ESC+"[15;3~", 'sco': ESC+"[Q", 'sco-ctrl': ESC+"[o"},
+        'F6': {'default': ESC+"[17~", 'alt': ESC+"[17;3~", 'sco': ESC+"[R", 'sco-ctrl': ESC+"[p"},
+        'F7': {'default': ESC+"[18~", 'alt': ESC+"[18;3~", 'sco': ESC+"[S", 'sco-ctrl': ESC+"[q"},
+        'F8': {'default': ESC+"[19~", 'alt': ESC+"[19;3~", 'sco': ESC+"[T", 'sco-ctrl': ESC+"[r"},
+        'F9': {'default': ESC+"[20~", 'alt': ESC+"[20;3~", 'sco': ESC+"[U", 'sco-ctrl': ESC+"[s"},
+        'F10': {'default': ESC+"[21~", 'alt': ESC+"[21;3~", 'sco': ESC+"[V", 'sco-ctrl': ESC+"[t"},
+        'F11': {'default': ESC+"[23~", 'alt': ESC+"[23;3~", 'sco': ESC+"[W", 'sco-ctrl': ESC+"[u"},
+        'F12': {'default': ESC+"[24~", 'alt': ESC+"[24;3~"},
+        'F13': {'default': ESC+"[25~", 'alt': ESC+"[25;3~", 'sco': ESC+"[X", 'sco-ctrl': ESC+"[v", 'xterm': ESC+"O2P"},
+        'F14': {'default': ESC+"[26~", 'alt': ESC+"[26;3~", 'xterm': ESC+"O2Q"},
+        'F15': {'default': ESC+"[28~", 'alt': ESC+"[28;3~", 'xterm': ESC+"O2R"},
+        'F16': {'default': ESC+"[29~", 'alt': ESC+"[29;3~", 'xterm': ESC+"O2S"},
+        'F17': {'default': ESC+"[31~", 'alt': ESC+"[31;3~", 'xterm': ESC+"[15;2~"},
+        'F18': {'default': ESC+"[32~", 'alt': ESC+"[32;3~", 'xterm': ESC+"[17;2~"},
+        'F19': {'default': ESC+"[33~", 'alt': ESC+"[33;3~", 'xterm': ESC+"[18;2~"},
+        'F20': {'default': ESC+"[34~", 'alt': ESC+"[34;3~", 'xterm': ESC+"[19;2~"},
+        'F21': {'default': ESC+"[20;2~"}, // All F-keys beyond this point are xterm-style (vt220 only goes up to F20)
+        'F22': {'default': ESC+"[21;2~"},
+        'F23': {'default': ESC+"[23;2~"},
+        'F24': {'default': ESC+"[24;2~"},
+        'F25': {'default': ESC+"O5P"},
+        'F26': {'default': ESC+"O5Q"},
+        'F27': {'default': ESC+"O5R"},
+        'F28': {'default': ESC+"O5S"},
+        'F29': {'default': ESC+"[15;5~"},
+        'F30': {'default': ESC+"[17;5~"},
+        'F31': {'default': ESC+"[18;5~"},
+        'F32': {'default': ESC+"[19;5~"},
+        'F33': {'default': ESC+"[20;5~"},
+        'F34': {'default': ESC+"[21;5~"},
+        'F35': {'default': ESC+"[23;5~"},
+        'F36': {'default': ESC+"[24;5~"},
+        'F37': {'default': ESC+"O6P"},
+        'F38': {'default': ESC+"O6Q"},
+        'F39': {'default': ESC+"O6R"},
+        'F40': {'default': ESC+"O6S"},
+        'F41': {'default': ESC+"[15;6~"},
+        'F42': {'default': ESC+"[17;6~"},
+        'F43': {'default': ESC+"[18;6~"},
+        'F44': {'default': ESC+"[19;6~"},
+        'F45': {'default': ESC+"[20;6~"},
+        'F46': {'default': ESC+"[21;6~"},
+        'F47': {'default': ESC+"[23;6~"},
+        'F48': {'default': ESC+"[24;6~"},
+        'ENTER': {'default': String.fromCharCode(13), 'ctrl': String.fromCharCode(13)},
+        'NUM_PAD_ENTER': {'default': String.fromCharCode(13), 'ctrl': String.fromCharCode(13)},
+        'BACKSPACE': {'default': String.fromCharCode(127), 'alt': ESC+String.fromCharCode(8)}, // Default is ^?. Will be changable to ^H eventually.
+        'NUM_PAD_CLEAR': String.fromCharCode(12), // Not sure if this will do anything
+        'SHIFT': null,
+        'CTRL': null,
+        'ALT': null,
+        'PAUSE': {'default': ESC+"[28~", 'xterm': ESC+"O2R"}, // Same as F15
+        'CAPS_LOCK': null,
+        'ESCAPE': {'default': ESC},
+        'TAB': {'default': String.fromCharCode(9), 'shift': ESC+"[Z"},
+        'SPACEBAR': {'ctrl': String.fromCharCode(0)}, // NOTE: Do we *really* need to have an appmode option for this?
+        'PAGE_UP': {'default': ESC+"[5~", 'alt': ESC+"[5;3~", 'sco': ESC+"[I"},
+        'PAGE_DOWN': {'default': ESC+"[6~", 'alt': ESC+"[6;3~", 'sco': ESC+"[G"}, // ^[[6~
+        'END': {'default': ESC+"[F", 'meta': ESC+"[1;1F", 'shift': ESC+"[1;2F", 'alt': ESC+"[1;3F", 'alt-shift': ESC+"[1;4F", 'ctrl': ESC+"[1;5F", 'ctrl-shift': ESC+"[1;6F", 'appmode': ESC+"OF", 'sco': ESC+"[F"},
+        'HOME': {'default': ESC+"[H", 'meta': ESC+"[1;1H", 'shift': ESC+"[1;2H", 'alt': ESC+"[1;3H", 'alt-shift': ESC+"[1;4H", 'ctrl': ESC+"[1;5H", 'ctrl-shift': ESC+"[1;6H", 'appmode': ESC+"OH", 'sco': ESC+"[H"},
+        'ARROW_LEFT': {'default': ESC+"[D", 'alt': ESC+"[1;3D", 'ctrl': ESC+"[1;5D", 'appmode': ESC+"OD"},
+        'ARROW_UP': {'default': ESC+"[A", 'alt': ESC+"[1;3A", 'ctrl': ESC+"[1;5A", 'appmode': ESC+"OA"},
+        'ARROW_RIGHT': {'default': ESC+"[C", 'alt': ESC+"[1;3C", 'ctrl': ESC+"[1;5C", 'appmode': ESC+"OC"},
+        'ARROW_DOWN': {'default': ESC+"[B", 'alt': ESC+"[1;3B", 'ctrl': ESC+"[1;5B", 'appmode': ESC+"OB"},
+        'PRINT_SCREEN': {'default': ESC+"[25~", 'xterm': ESC+"O2P"}, // Same as F13
+        'INSERT': {'default': ESC+"[2~", 'meta': ESC+"[2;1~", 'alt': ESC+"[2;3~", 'alt-shift': ESC+"[2;4~", 'sco': ESC+"[L"},
+        'DELETE': {'default': ESC+"[3~", 'shift': ESC+"[3;2~", 'alt': ESC+"[3;3~", 'alt-shift': ESC+"[3;4~", 'ctrl': ESC+"[3;5~", 'sco': ESC+"?"},
+        'WINDOWS_LEFT': null,
+        'WINDOWS_RIGHT': null,
 // Keypad Enter        ^[OM
 // Keypad Del          ^[On
 // Keypad Ins          ^[Op
@@ -1038,26 +1043,26 @@ GateOne.Base.update(GateOne.Terminal.Input, {
 // Keypad Center       ^[Ou
 // Keypad Cursor Right ^[Ov
 // Keypad Cursor Up    ^[Ox
-        'KEY_SELECT': String.fromCharCode(93),
-        'KEY_NUM_PAD_ASTERISK': {'alt': ESC+"*", 'sco': ESC+"[OR"},
-        'KEY_NUM_PAD_PLUS_SIGN': {'alt': ESC+"+", 'sco': ESC+"[Ol"},
+        'SELECT': String.fromCharCode(93),
+        'NUM_PAD_ASTERISK': {'alt': ESC+"*", 'sco': ESC+"[OR"},
+        'NUM_PAD_PLUS_SIGN': {'alt': ESC+"+", 'sco': ESC+"[Ol"},
 // NOTE: The regular hyphen key shows up as a num pad hyphen in Firefox
-        'KEY_NUM_PAD_HYPHEN-MINUS': {'shift': "_", 'alt': ESC+"-", 'alt-shift': ESC+"_"},
-        'KEY_NUM_PAD_FULL_STOP': {'alt': ESC+"."},
-        'KEY_NUM_PAD_SOLIDUS': {'alt': ESC+"/", 'sco': ESC+"[OQ"},
-        'KEY_NUM_LOCK': {'sco': ESC+"[OP"}, // TODO: Double-check that NumLock isn't supposed to send some sort of wacky ESC sequence
-        'KEY_SCROLL_LOCK': {'default': ESC+"[26~", 'xterm': ESC+"O2Q"}, // Same as F14
-        'KEY_SEMICOLON': {'alt': ESC+";", 'alt-shift': ESC+":"},
-        'KEY_EQUALS_SIGN': {'alt': ESC+"=", 'alt-shift': ESC+"+"},
-        'KEY_COMMA': {'alt': ESC+",", 'alt-shift': ESC+"<"},
-        'KEY_HYPHEN-MINUS': {'shift': "_", 'alt': ESC+"-", 'alt-shift': ESC+"_", 'sco': ESC+"[OS"},
-        'KEY_FULL_STOP': {'alt': ESC+".", 'alt-shift': ESC+">"},
-        'KEY_SOLIDUS': {'alt': ESC+"/", 'alt-shift': ESC+"?", 'ctrl': String.fromCharCode(31), 'ctrl-shift': String.fromCharCode(31)},
-        'KEY_GRAVE_ACCENT':  {'alt': ESC+"`", 'alt-shift': ESC+"~", 'ctrl-shift': String.fromCharCode(30)},
-        'KEY_LEFT_SQUARE_BRACKET':  {'alt': ESC+"[", 'alt-shift': ESC+"{", 'ctrl': ESC},
-        'KEY_REVERSE_SOLIDUS':  {'alt': ESC+"\\", 'alt-shift': ESC+"|", 'ctrl': String.fromCharCode(28)},
-        'KEY_RIGHT_SQUARE_BRACKET':  {'alt': ESC+"]", 'alt-shift': ESC+"}", 'ctrl': String.fromCharCode(29)},
-        'KEY_APOSTROPHE': {'alt': ESC+"'", 'alt-shift': ESC+'"'}
+        'NUM_PAD_HYPHEN-MINUS': {'shift': "_", 'alt': ESC+"-", 'alt-shift': ESC+"_"},
+        'NUM_PAD_FULL_STOP': {'alt': ESC+"."},
+        'NUM_PAD_SOLIDUS': {'alt': ESC+"/", 'sco': ESC+"[OQ"},
+        'NUM_LOCK': {'sco': ESC+"[OP"}, // TODO: Double-check that NumLock isn't supposed to send some sort of wacky ESC sequence
+        'SCROLL_LOCK': {'default': ESC+"[26~", 'xterm': ESC+"O2Q"}, // Same as F14
+        'SEMICOLON': {'alt': ESC+";", 'alt-shift': ESC+":"},
+        'EQUALS_SIGN': {'alt': ESC+"=", 'alt-shift': ESC+"+"},
+        'COMMA': {'alt': ESC+",", 'alt-shift': ESC+"<"},
+        'HYPHEN-MINUS': {'shift': "_", 'alt': ESC+"-", 'alt-shift': ESC+"_", 'sco': ESC+"[OS"},
+        'FULL_STOP': {'alt': ESC+".", 'alt-shift': ESC+">"},
+        'SOLIDUS': {'alt': ESC+"/", 'alt-shift': ESC+"?", 'ctrl': String.fromCharCode(31), 'ctrl-shift': String.fromCharCode(31)},
+        'GRAVE_ACCENT':  {'alt': ESC+"`", 'alt-shift': ESC+"~", 'ctrl-shift': String.fromCharCode(30)},
+        'LEFT_SQUARE_BRACKET':  {'altgr': "[", 'alt-shift': ESC+"{", 'ctrl': ESC},
+        'REVERSE_SOLIDUS':  {'altgr': "|", 'altgr-shift': "\\"},
+        'RIGHT_SQUARE_BRACKET':  {'altgr': "]", 'alt-shift': ESC+"}", 'ctrl': String.fromCharCode(29)},
+        'APOSTROPHE': {'alt': ESC+"'", 'alt-shift': ESC+'"'}
     }
 });
 
